@@ -48,6 +48,9 @@ class RetrievalDebugInfo(BaseModel):
     )
     search_latency_ms: int = Field(..., description="Search latency in milliseconds")
     rerank_latency_ms: int = Field(..., description="Reranking latency in milliseconds")
+    overlap_hits: Optional[int] = Field(
+        default=None, description="Overlap between dense-only and BM25-only topK"
+    )
 
 
 class QueryRequest(BaseModel):
@@ -150,7 +153,7 @@ async def query_documents(
     import uuid
 
     # Validate reranker selection
-    if request.reranker == "cohere" and not settings.enable_cohere:
+    if request.reranker == "cohere" and not settings.rerank.cohere_enabled:
         raise HTTPException(
             status_code=400,
             detail="Cohere reranker not enabled. Set ASKME_ENABLE_COHERE=1",
@@ -205,6 +208,7 @@ async def query_documents(
         t2 = time.monotonic()
         # 4) Rerank
         from askme.rerank.rerank_service import RerankingService
+
         rerank_svc = cast(RerankingService, reranking_service)
         reranked = await rerank_svc.rerank(
             request.q, results, top_n=request.max_passages, prefer_local=True
@@ -246,9 +250,61 @@ async def query_documents(
 
         debug_info = None
         if request.include_debug:
+            # 真实统计 dense-only 与 BM25-only 的 topK 命中（以原始 query 近似）
+            bm25_hits = 0
+            dense_hits = 0
+            overlap_hits = 0
+            try:
+                q0_emb = await embedding_service.encode_query(request.q)
+                dense_only = await retriever.dense_search(
+                    q0_emb["dense_embedding"],
+                    topk=request.topk,
+                    filters=request.filters,
+                )
+                sparse_only = await retriever.sparse_search(
+                    q0_emb["sparse_embedding"],
+                    topk=request.topk,
+                    filters=request.filters,
+                )
+                if not sparse_only:
+                    # Weaviate 走 alpha 极值近似 BM25-only / dense-only
+                    w_params_dense = HybridSearchParams(
+                        alpha=1.0,
+                        use_rrf=False,
+                        rrf_k=request.rrf_k,
+                        topk=request.topk,
+                        filters=request.filters,
+                        original_query=request.q,
+                    )
+                    w_params_sparse = HybridSearchParams(
+                        alpha=0.0,
+                        use_rrf=False,
+                        rrf_k=request.rrf_k,
+                        topk=request.topk,
+                        filters=request.filters,
+                        original_query=request.q,
+                    )
+                    dense_only = await retriever.hybrid_search(
+                        q0_emb["dense_embedding"],
+                        q0_emb["sparse_embedding"],
+                        w_params_dense,
+                    )
+                    sparse_only = await retriever.hybrid_search(
+                        q0_emb["dense_embedding"],
+                        q0_emb["sparse_embedding"],
+                        w_params_sparse,
+                    )
+                dense_ids = {r.document.id for r in dense_only}
+                sparse_ids = {r.document.id for r in sparse_only}
+                bm25_hits = len(sparse_ids)
+                dense_hits = len(dense_ids)
+                overlap_hits = len(dense_ids & sparse_ids)
+            except Exception:
+                pass
+
             debug_info = RetrievalDebugInfo(
-                bm25_hits=len(results),
-                dense_hits=len(results),
+                bm25_hits=bm25_hits or len(results),
+                dense_hits=dense_hits or len(results),
                 fusion_method="rrf" if request.use_rrf else "alpha",
                 alpha=request.alpha,
                 rrf_k=request.rrf_k if request.use_rrf else None,
@@ -258,6 +314,7 @@ async def query_documents(
                 embedding_latency_ms=int((t1 - t0) * 1000),
                 search_latency_ms=int((t2 - t1) * 1000),
                 rerank_latency_ms=int((t3 - t2) * 1000),
+                overlap_hits=overlap_hits or None,
             )
 
         return QueryResponse(
@@ -309,11 +366,33 @@ async def query_documents(
             rerank_latency_ms=300,
         )
 
-    return QueryResponse(
-        answer=(
+    # 若真实流程失败，仍尽量调用已配置的 generator 生成答案，便于本地快速联调（如 Ollama ）
+    try:
+        if http_request is not None:
+            app = http_request.app
+            generator = getattr(app.state, "generator", None)
+            if generator is not None:
+                from askme.generation.generator import Passage
+
+                passages = [
+                    Passage(
+                        doc_id=c.doc_id, title=c.title, content=c.content, score=c.score
+                    )
+                    for c in mock_citations
+                ]
+                answer = await generator.generate(request.q, passages)
+            else:
+                raise RuntimeError("generator unavailable")
+        else:
+            raise RuntimeError("no request context")
+    except Exception:
+        answer = (
             f"Based on the provided context, {request.q}... "
             f"[Doc 001: Sample Document 1] [Doc 002: Sample Document 2]"
-        ),
+        )
+
+    return QueryResponse(
+        answer=answer,
         citations=mock_citations,
         query_id=str(uuid.uuid4()),
         timestamp=datetime.utcnow(),
@@ -396,9 +475,55 @@ async def retrieve_documents(
                 )
             )
 
+        bm25_hits = len(results)
+        dense_hits = len(results)
+        overlap_hits = None
+        try:
+            q0_emb = await embedding_service.encode_query(request.q)
+            dense_only = await retriever.dense_search(
+                q0_emb["dense_embedding"], topk=request.topk, filters=request.filters
+            )
+            sparse_only = await retriever.sparse_search(
+                q0_emb["sparse_embedding"], topk=request.topk, filters=request.filters
+            )
+            if not sparse_only:
+                w_params_dense = HybridSearchParams(
+                    alpha=1.0,
+                    use_rrf=False,
+                    rrf_k=request.rrf_k,
+                    topk=request.topk,
+                    filters=request.filters,
+                    original_query=request.q,
+                )
+                w_params_sparse = HybridSearchParams(
+                    alpha=0.0,
+                    use_rrf=False,
+                    rrf_k=request.rrf_k,
+                    topk=request.topk,
+                    filters=request.filters,
+                    original_query=request.q,
+                )
+                dense_only = await retriever.hybrid_search(
+                    q0_emb["dense_embedding"],
+                    q0_emb["sparse_embedding"],
+                    w_params_dense,
+                )
+                sparse_only = await retriever.hybrid_search(
+                    q0_emb["dense_embedding"],
+                    q0_emb["sparse_embedding"],
+                    w_params_sparse,
+                )
+            dense_ids = {r.document.id for r in dense_only}
+            sparse_ids = {r.document.id for r in sparse_only}
+            bm25_hits = len(sparse_ids)
+            dense_hits = len(dense_ids)
+            overlap_hits = len(dense_ids & sparse_ids)
+        except Exception:
+            pass
+
         debug_info = RetrievalDebugInfo(
-            bm25_hits=len(results),
-            dense_hits=len(results),
+            bm25_hits=bm25_hits,
+            dense_hits=dense_hits,
             fusion_method="rrf" if request.use_rrf else "alpha",
             alpha=request.alpha,
             rrf_k=request.rrf_k if request.use_rrf else None,
@@ -407,6 +532,7 @@ async def retrieve_documents(
             embedding_latency_ms=0,
             search_latency_ms=int((t1 - t0) * 1000),
             rerank_latency_ms=0,
+            overlap_hits=overlap_hits,
         )
 
         return RetrievalResponse(

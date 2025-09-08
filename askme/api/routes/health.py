@@ -33,7 +33,7 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
         "embedding_model": settings.embedding.model,
         "reranker": {
             "local": settings.rerank.local_enabled,
-            "cohere": settings.enable_cohere,
+            "cohere": settings.rerank.cohere_enabled,
         },
     }
 

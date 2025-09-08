@@ -7,9 +7,11 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import torch
-from FlagEmbedding import BGEM3FlagModel
-from sentence_transformers import SentenceTransformer
+
+try:
+    import torch  # type: ignore
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore
 
 from askme.core.config import EmbeddingConfig
 
@@ -22,7 +24,10 @@ class BGEEmbeddingService:
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # 允许在未安装 torch 的环境下工作（跳过 GPU 检测）
+        self.device = (
+            "cuda" if (hasattr(torch, "cuda") and torch.cuda.is_available()) else "cpu"
+        )
         self._is_initialized = False
 
     async def initialize(self) -> None:
@@ -33,9 +38,14 @@ class BGEEmbeddingService:
         try:
             logger.info(f"Loading BGE-M3 model: {self.config.model}")
 
+            # 延迟导入以避免在未安装依赖时阻塞应用其它功能
+            from FlagEmbedding import BGEM3FlagModel  # type: ignore
+
             # Load BGE-M3 model
             self.model = BGEM3FlagModel(
-                self.config.model, use_fp16=self.config.use_fp16, device=self.device
+                self.config.model,
+                use_fp16=(self.device != "cpu" and self.config.use_fp16),
+                device=self.device,
             )
 
             self._is_initialized = True
@@ -343,7 +353,7 @@ class BGEEmbeddingService:
         """Clean up model resources."""
         if self.model is not None:
             # Clear CUDA cache if using GPU
-            if torch.cuda.is_available():
+            if hasattr(torch, "cuda") and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
             self.model = None
