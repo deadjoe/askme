@@ -142,10 +142,18 @@ class BGEEmbeddingService:
                 return_sparse=False,
                 return_colbert_vecs=False,
             )
-            vec = result.get("dense_vecs") or result.get("dense_vectors")
+            vec = result.get("dense_vecs")
+            if vec is None:
+                vec = result.get("dense_vectors")
+            # vec can be list-of-arrays or numpy array with shape (1, dim)
+            if hasattr(vec, "shape") and hasattr(vec, "tolist"):
+                # numpy array
+                arr = vec
+                if len(arr.shape) == 2 and arr.shape[0] >= 1:
+                    return arr[0].tolist()
+                return arr.tolist()
             if isinstance(vec, list) and vec:
                 dense = vec[0]
-                # For single-vector helper, return raw model output to match tests
                 return dense.tolist() if hasattr(dense, "tolist") else list(dense)
             raise RuntimeError("Dense embedding not returned by model")
         except Exception as e:

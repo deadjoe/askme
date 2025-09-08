@@ -136,9 +136,9 @@ router = APIRouter()
 
 @router.post("/", response_model=QueryResponse)
 async def query_documents(
-    request: QueryRequest,
+    req: QueryRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    http_request: Optional[Request] = None,
 ) -> QueryResponse:
     """
     Query documents using hybrid search with optional enhancements.
@@ -153,7 +153,7 @@ async def query_documents(
     import uuid
 
     # Validate reranker selection
-    if request.reranker == "cohere" and not settings.rerank.cohere_enabled:
+    if req.reranker == "cohere" and not settings.rerank.cohere_enabled:
         raise HTTPException(
             status_code=400,
             detail="Cohere reranker not enabled. Set ASKME_ENABLE_COHERE=1",
@@ -161,9 +161,7 @@ async def query_documents(
 
     # Try real pipeline using app services if available, else fall back to mock
     try:
-        if http_request is None:
-            raise RuntimeError("No request context")
-        app = http_request.app
+        app = request.app
         embedding_service = getattr(app.state, "embedding_service", None)
         retriever = getattr(app.state, "retriever", None)
         reranking_service = getattr(app.state, "reranking_service", None)
@@ -173,24 +171,24 @@ async def query_documents(
 
         t0 = time.monotonic()
         # 1) (Optional) enhancement
-        query_list: List[str] = [request.q]
-        if request.use_hyde:
-            hyde_text = generate_hyde_passage(request.q)
+        query_list: List[str] = [req.q]
+        if req.use_hyde:
+            hyde_text = generate_hyde_passage(req.q)
             query_list.append(hyde_text)
-        if request.use_rag_fusion:
-            fusion = generate_fusion_queries(request.q, num_queries=3)
+        if req.use_rag_fusion:
+            fusion = generate_fusion_queries(req.q, num_queries=3)
             # Include generated variants; original already present
             query_list.extend([q for q in fusion if q not in query_list])
 
         # 2) Encode + retrieve
         t1 = time.monotonic()
         params = HybridSearchParams(
-            alpha=request.alpha,
-            use_rrf=request.use_rrf,
-            rrf_k=request.rrf_k,
-            topk=request.topk,
-            filters=request.filters,
-            original_query=request.q,
+            alpha=req.alpha,
+            use_rrf=req.use_rrf,
+            rrf_k=req.rrf_k,
+            topk=req.topk,
+            filters=req.filters,
+            original_query=req.q,
         )
         result_lists = []
         for q in query_list:
@@ -201,7 +199,7 @@ async def query_documents(
             result_lists.append(res)
         # Fuse multiple result lists (if any) with RRF; otherwise use single
         results = (
-            SearchFusion.reciprocal_rank_fusion(result_lists, k=request.rrf_k)
+            SearchFusion.reciprocal_rank_fusion(result_lists, k=req.rrf_k)
             if len(result_lists) > 1
             else result_lists[0]
         )
@@ -211,7 +209,7 @@ async def query_documents(
 
         rerank_svc = cast(RerankingService, reranking_service)
         reranked = await rerank_svc.rerank(
-            request.q, results, top_n=request.max_passages, prefer_local=True
+            req.q, results, top_n=req.max_passages, prefer_local=True
         )
         t3 = time.monotonic()
 
@@ -242,47 +240,43 @@ async def query_documents(
             # Fallback minimal template
             titles = ", ".join([c.title for c in citations]) or "context"
             answer = (
-                f"Based on retrieved context, here is an answer about '{request.q}'. "
+                f"Based on retrieved context, here is an answer about '{req.q}'. "
                 f"Sources: {titles}."
             )
         else:
-            answer = await generator.generate(request.q, passages)
+            answer = await generator.generate(req.q, passages)
 
         debug_info = None
-        if request.include_debug:
+        if req.include_debug:
             # 真实统计 dense-only 与 BM25-only 的 topK 命中（以原始 query 近似）
             bm25_hits = 0
             dense_hits = 0
             overlap_hits = 0
             try:
-                q0_emb = await embedding_service.encode_query(request.q)
+                q0_emb = await embedding_service.encode_query(req.q)
                 dense_only = await retriever.dense_search(
-                    q0_emb["dense_embedding"],
-                    topk=request.topk,
-                    filters=request.filters,
+                    q0_emb["dense_embedding"], topk=req.topk, filters=req.filters
                 )
                 sparse_only = await retriever.sparse_search(
-                    q0_emb["sparse_embedding"],
-                    topk=request.topk,
-                    filters=request.filters,
+                    q0_emb["sparse_embedding"], topk=req.topk, filters=req.filters
                 )
                 if not sparse_only:
                     # Weaviate 走 alpha 极值近似 BM25-only / dense-only
                     w_params_dense = HybridSearchParams(
                         alpha=1.0,
                         use_rrf=False,
-                        rrf_k=request.rrf_k,
-                        topk=request.topk,
-                        filters=request.filters,
-                        original_query=request.q,
+                        rrf_k=req.rrf_k,
+                        topk=req.topk,
+                        filters=req.filters,
+                        original_query=req.q,
                     )
                     w_params_sparse = HybridSearchParams(
                         alpha=0.0,
                         use_rrf=False,
-                        rrf_k=request.rrf_k,
-                        topk=request.topk,
-                        filters=request.filters,
-                        original_query=request.q,
+                        rrf_k=req.rrf_k,
+                        topk=req.topk,
+                        filters=req.filters,
+                        original_query=req.q,
                     )
                     dense_only = await retriever.hybrid_search(
                         q0_emb["dense_embedding"],
@@ -305,10 +299,10 @@ async def query_documents(
             debug_info = RetrievalDebugInfo(
                 bm25_hits=bm25_hits or len(results),
                 dense_hits=dense_hits or len(results),
-                fusion_method="rrf" if request.use_rrf else "alpha",
-                alpha=request.alpha,
-                rrf_k=request.rrf_k if request.use_rrf else None,
-                rerank_model=request.reranker,
+                fusion_method="rrf" if req.use_rrf else "alpha",
+                alpha=req.alpha,
+                rrf_k=req.rrf_k if req.use_rrf else None,
+                rerank_model=req.reranker,
                 rerank_scores=[float(r.rerank_score) for r in reranked],
                 latency_ms=int((t3 - t0) * 1000),
                 embedding_latency_ms=int((t1 - t0) * 1000),
@@ -351,14 +345,14 @@ async def query_documents(
     ]
 
     debug_info = None
-    if request.include_debug:
+    if req.include_debug:
         debug_info = RetrievalDebugInfo(
             bm25_hits=25,
             dense_hits=30,
-            fusion_method="rrf" if request.use_rrf else "alpha",
-            alpha=request.alpha,
-            rrf_k=request.rrf_k if request.use_rrf else None,
-            rerank_model=request.reranker,
+            fusion_method="rrf" if req.use_rrf else "alpha",
+            alpha=req.alpha,
+            rrf_k=req.rrf_k if req.use_rrf else None,
+            rerank_model=req.reranker,
             rerank_scores=[0.92, 0.87, 0.79, 0.71],
             latency_ms=1250,
             embedding_latency_ms=150,
@@ -368,8 +362,8 @@ async def query_documents(
 
     # 若真实流程失败，仍尽量调用已配置的 generator 生成答案，便于本地快速联调（如 Ollama ）
     try:
-        if http_request is not None:
-            app = http_request.app
+        if request is not None:
+            app = request.app
             generator = getattr(app.state, "generator", None)
             if generator is not None:
                 from askme.generation.generator import Passage
@@ -380,14 +374,14 @@ async def query_documents(
                     )
                     for c in mock_citations
                 ]
-                answer = await generator.generate(request.q, passages)
+                answer = await generator.generate(req.q, passages)
             else:
                 raise RuntimeError("generator unavailable")
         else:
             raise RuntimeError("no request context")
     except Exception:
         answer = (
-            f"Based on the provided context, {request.q}... "
+            f"Based on the provided context, {req.q}... "
             f"[Doc 001: Sample Document 1] [Doc 002: Sample Document 2]"
         )
 
@@ -402,9 +396,9 @@ async def query_documents(
 
 @router.post("/retrieve", response_model=RetrievalResponse)
 async def retrieve_documents(
-    request: RetrievalRequest,
+    req: RetrievalRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    http_request: Optional[Request] = None,
 ) -> RetrievalResponse:
     """
     Retrieve documents without LLM generation.
@@ -419,9 +413,7 @@ async def retrieve_documents(
 
     # Try real retrieval if services exist
     try:
-        if http_request is None:
-            raise RuntimeError("No request context")
-        app = http_request.app
+        app = request.app
         embedding_service = getattr(app.state, "embedding_service", None)
         retriever = getattr(app.state, "retriever", None)
         if not embedding_service or not retriever:
@@ -429,24 +421,20 @@ async def retrieve_documents(
 
         t0 = time.monotonic()
         params = HybridSearchParams(
-            alpha=request.alpha,
-            use_rrf=request.use_rrf,
-            rrf_k=request.rrf_k,
-            topk=request.topk,
-            filters=request.filters,
-            original_query=request.q,
+            alpha=req.alpha,
+            use_rrf=req.use_rrf,
+            rrf_k=req.rrf_k,
+            topk=req.topk,
+            filters=req.filters,
+            original_query=req.q,
         )
         result_lists = []
-        query_list: List[str] = [request.q]
-        if request.use_hyde:
-            query_list.append(generate_hyde_passage(request.q))
-        if request.use_rag_fusion:
+        query_list: List[str] = [req.q]
+        if req.use_hyde:
+            query_list.append(generate_hyde_passage(req.q))
+        if req.use_rag_fusion:
             query_list.extend(
-                [
-                    q
-                    for q in generate_fusion_queries(request.q, 3)
-                    if q not in query_list
-                ]
+                [q for q in generate_fusion_queries(req.q, 3) if q not in query_list]
             )
         for q in query_list:
             q_emb = await embedding_service.encode_query(q)
@@ -462,7 +450,7 @@ async def retrieve_documents(
         t1 = time.monotonic()
 
         documents: List[Citation] = []
-        for r in results[: request.topk]:
+        for r in results[: req.topk]:
             documents.append(
                 Citation(
                     doc_id=r.document.id,
@@ -479,7 +467,7 @@ async def retrieve_documents(
         dense_hits = len(results)
         overlap_hits = None
         try:
-            q0_emb = await embedding_service.encode_query(request.q)
+            q0_emb = await embedding_service.encode_query(req.q)
             dense_only = await retriever.dense_search(
                 q0_emb["dense_embedding"], topk=request.topk, filters=request.filters
             )
@@ -490,18 +478,18 @@ async def retrieve_documents(
                 w_params_dense = HybridSearchParams(
                     alpha=1.0,
                     use_rrf=False,
-                    rrf_k=request.rrf_k,
-                    topk=request.topk,
-                    filters=request.filters,
-                    original_query=request.q,
+                    rrf_k=req.rrf_k,
+                    topk=req.topk,
+                    filters=req.filters,
+                    original_query=req.q,
                 )
                 w_params_sparse = HybridSearchParams(
                     alpha=0.0,
                     use_rrf=False,
-                    rrf_k=request.rrf_k,
-                    topk=request.topk,
-                    filters=request.filters,
-                    original_query=request.q,
+                    rrf_k=req.rrf_k,
+                    topk=req.topk,
+                    filters=req.filters,
+                    original_query=req.q,
                 )
                 dense_only = await retriever.hybrid_search(
                     q0_emb["dense_embedding"],

@@ -58,9 +58,9 @@ router = APIRouter()
 
 @router.post("/", response_model=IngestResponse)
 async def ingest_documents(
-    request: IngestRequest,
+    req: IngestRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    http_request: Request | None = None,
 ) -> IngestResponse:
     """
     Ingest documents from various sources.
@@ -72,35 +72,31 @@ async def ingest_documents(
     """
 
     # Validate source type
-    if request.source not in ["file", "dir", "url"]:
+    if req.source not in ["file", "dir", "url"]:
         raise HTTPException(
             status_code=400, detail="Source must be one of: file, dir, url"
         )
 
     # Validate path/URL
-    if request.source in ["file", "dir"]:
-        source_path = Path(request.path)
+    if req.source in ["file", "dir"]:
+        source_path = Path(req.path)
         if not source_path.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {req.path}")
+
+        if req.source == "file" and not source_path.is_file():
             raise HTTPException(
-                status_code=404, detail=f"Path not found: {request.path}"
+                status_code=400, detail=f"Path is not a file: {req.path}"
             )
 
-        if request.source == "file" and not source_path.is_file():
+        if req.source == "dir" and not source_path.is_dir():
             raise HTTPException(
-                status_code=400, detail=f"Path is not a file: {request.path}"
-            )
-
-        if request.source == "dir" and not source_path.is_dir():
-            raise HTTPException(
-                status_code=400, detail=f"Path is not a directory: {request.path}"
+                status_code=400, detail=f"Path is not a directory: {req.path}"
             )
 
     # Route to ingestion service
     service = None
-    if http_request is not None and hasattr(
-        http_request.app.state, "ingestion_service"
-    ):
-        service = http_request.app.state.ingestion_service
+    if hasattr(request.app.state, "ingestion_service"):
+        service = request.app.state.ingestion_service
     else:
         # Fallback creation (tests may patch this)
         service = cast(Any, IngestionService)(
@@ -108,20 +104,20 @@ async def ingest_documents(
         )
 
     try:
-        if request.source == "file":
+        if req.source == "file":
             task_id = await service.ingest_file(
-                file_path=request.path,
-                metadata=request.metadata,
-                tags=request.tags,
-                overwrite=request.overwrite,
+                file_path=req.path,
+                metadata=req.metadata,
+                tags=req.tags,
+                overwrite=req.overwrite,
             )
-        elif request.source == "dir":
+        elif req.source == "dir":
             task_id = await service.ingest_directory(
-                dir_path=request.path,
+                dir_path=req.path,
                 recursive=True,
-                metadata=request.metadata,
-                tags=request.tags,
-                overwrite=request.overwrite,
+                metadata=req.metadata,
+                tags=req.tags,
+                overwrite=req.overwrite,
             )
         else:
             # URL ingestion not yet implemented
@@ -146,13 +142,13 @@ class IngestFilePayload(BaseModel):
 @router.post("/file", response_model=IngestResponse)
 async def ingest_file_endpoint(
     payload: IngestFilePayload,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    request: Optional[Request] = None,
 ) -> IngestResponse:
     """Ingest a single file using IngestionService (for test contract)."""
 
     service = None
-    if request is not None and hasattr(request.app.state, "ingestion_service"):
+    if hasattr(request.app.state, "ingestion_service"):
         service = request.app.state.ingestion_service
     else:
         # In tests this class is patched; types are relaxed here intentionally
@@ -181,13 +177,13 @@ class IngestDirectoryPayload(BaseModel):
 @router.post("/directory", response_model=IngestResponse)
 async def ingest_directory_endpoint(
     payload: IngestDirectoryPayload,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    request: Optional[Request] = None,
 ) -> IngestResponse:
     """Ingest a directory using IngestionService (for test contract)."""
 
     service = None
-    if request is not None and hasattr(request.app.state, "ingestion_service"):
+    if hasattr(request.app.state, "ingestion_service"):
         service = request.app.state.ingestion_service
     else:
         service = cast(Any, IngestionService)(
@@ -250,15 +246,15 @@ async def upload_and_ingest(
 @router.get("/status/{task_id}", response_model=IngestStatusResponse)
 async def get_ingestion_status(
     task_id: str,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    request: Request | None = None,
 ) -> IngestStatusResponse:
     """
     Get the status of an ingestion task.
     """
 
     service = None
-    if request is not None and hasattr(request.app.state, "ingestion_service"):
+    if hasattr(request.app.state, "ingestion_service"):
         service = request.app.state.ingestion_service
     else:
         raise HTTPException(status_code=503, detail="Ingestion service unavailable")
@@ -301,14 +297,15 @@ async def cancel_ingestion_task(
 
 @router.get("/stats")
 async def get_ingestion_stats(
-    settings: Settings = Depends(get_settings), request: Request | None = None
+    request: Request,
+    settings: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
     """
     Get overall ingestion statistics.
     """
 
     service = None
-    if request is not None and hasattr(request.app.state, "ingestion_service"):
+    if hasattr(request.app.state, "ingestion_service"):
         service = request.app.state.ingestion_service
     else:
         raise HTTPException(status_code=503, detail="Ingestion service unavailable")
