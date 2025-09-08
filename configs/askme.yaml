@@ -1,0 +1,236 @@
+# askme Configuration
+# Version: 2025-09
+
+# Vector Database Backend
+vector_backend: milvus  # milvus | weaviate | qdrant
+
+# Database Connection
+database:
+  milvus:
+    host: localhost
+    port: 19530
+    username: ""
+    password: ""
+    secure: false
+    collection_name: "askme_hybrid"
+  weaviate:
+    url: "http://localhost:8080"
+    api_key: ""
+    class_name: "AskmeDocument"
+  qdrant:
+    url: "http://localhost:6333"
+    api_key: ""
+    collection_name: "askme"
+
+# Hybrid Search Configuration
+hybrid:
+  mode: rrf        # alpha | rrf | relative_score | ranked
+  alpha: 0.5       # For alpha fusion: 0=sparse only, 1=dense only, 0.5=balanced
+  rrf_k: 60        # RRF fusion parameter (typical: 20-100)
+  topk: 50         # Initial retrieval candidates
+  
+  # Search parameters
+  dense_weight: 1.0
+  sparse_weight: 1.0
+  enable_metadata_filter: true
+  
+# Embedding Model Configuration
+embedding:
+  model: "BAAI/bge-m3"
+  model_name: "bge-m3"
+  dimension: 1024
+  max_length: 8192
+  normalize_embeddings: true
+  batch_size: 32
+  
+  # BGE-M3 specific settings
+  use_fp16: true
+  pooling_method: "cls"
+  query_instruction: ""
+  passage_instruction: ""
+
+# Reranking Configuration
+rerank:
+  # Local reranker (primary)
+  local_model: "BAAI/bge-reranker-v2.5-gemma2-lightweight"
+  local_enabled: true
+  local_batch_size: 16
+  local_max_length: 1024
+  
+  # Cloud reranker (fallback)
+  cohere_enabled: false  # Set via ASKME_ENABLE_COHERE=1
+  cohere_model: "rerank-3.5-turbo"
+  cohere_max_chunks_per_doc: 10
+  cohere_return_documents: true
+  
+  # Reranking parameters
+  top_n: 8           # Final passages for generation
+  score_threshold: 0.0
+  enable_cross_encoder: true
+
+# Query Enhancement
+enhancer:
+  # HyDE (Hypothetical Document Embeddings)
+  hyde:
+    enabled: false
+    prompt_template: |
+      Please write a passage to answer the question: {query}
+      Passage:
+    max_tokens: 256
+    temperature: 0.3
+  
+  # RAG-Fusion (Multi-query generation)
+  rag_fusion:
+    enabled: false
+    num_queries: 3
+    query_generation_prompt: |
+      You are a helpful assistant that generates multiple search queries based on a single input query.
+      Generate {num_queries} different but related queries that would help comprehensively answer: {original_query}
+      
+      Queries:
+    fusion_method: "rrf"  # rrf | weighted_sum | max
+
+# Document Processing
+document:
+  # Supported formats
+  supported_formats: ["pdf", "txt", "md", "html", "json", "docx"]
+  
+  # Chunking strategy
+  chunking:
+    method: "semantic"  # fixed | semantic | recursive
+    chunk_size: 1000
+    chunk_overlap: 200
+    min_chunk_size: 100
+    max_chunk_size: 2000
+    
+  # Text processing
+  preprocessing:
+    remove_extra_whitespace: true
+    normalize_unicode: true
+    extract_metadata: true
+    preserve_structure: true
+
+# Generation (LLM) Configuration
+generation:
+  # Default model settings
+  model_name: "gpt-4"
+  max_tokens: 1500
+  temperature: 0.1
+  top_p: 0.9
+  
+  # Prompt templates
+  system_prompt: |
+    You are a helpful assistant that answers questions based on the provided context.
+    Always cite your sources using the provided document references.
+    If you cannot find relevant information in the context, say so clearly.
+    
+  user_prompt_template: |
+    Context:
+    {context}
+    
+    Question: {question}
+    
+    Please provide a detailed answer based on the context above. Include citations in the format [Doc ID: title].
+
+# Evaluation Configuration
+evaluation:
+  # TruLens RAG Triad
+  trulens:
+    enabled: true
+    metrics: ["context_relevance", "groundedness", "answer_relevance"]
+    feedback_mode: "with_cot_reasons"
+    
+  # Ragas metrics
+  ragas:
+    enabled: true
+    version: "0.2.0"
+    metrics: ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+    
+  # Evaluation datasets
+  datasets:
+    baseline: "data/eval/baseline_qa.jsonl"
+    custom: "data/eval/custom_qa.jsonl"
+    
+  # Quality thresholds
+  thresholds:
+    trulens_min: 0.7
+    ragas_faithfulness_min: 0.7
+    ragas_precision_min: 0.6
+    answer_consistency_min: 0.9
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 1
+  reload: false
+  access_log: true
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    burst_size: 10
+    
+  # CORS
+  cors:
+    allow_origins: ["*"]
+    allow_methods: ["GET", "POST"]
+    allow_headers: ["*"]
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG | INFO | WARNING | ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
+  file:
+    enabled: true
+    path: "logs/askme.log"
+    rotation: "1 day"
+    retention: "30 days"
+    
+  # Structured logging
+  structured:
+    enabled: true
+    include_trace_id: true
+
+# Performance & Monitoring
+performance:
+  # Caching
+  cache:
+    enabled: true
+    ttl_seconds: 3600
+    max_size: 1000
+    
+  # Batch processing
+  batch:
+    embedding_batch_size: 32
+    rerank_batch_size: 16
+    max_concurrent_requests: 10
+    
+  # Timeouts
+  timeouts:
+    embedding_timeout: 30
+    retrieval_timeout: 15
+    rerank_timeout: 30
+    generation_timeout: 60
+
+# Security & Privacy
+security:
+  # Data privacy
+  privacy:
+    log_queries: false
+    log_documents: false
+    anonymize_logs: true
+    
+  # API security
+  api_keys:
+    enabled: false
+    header_name: "X-API-Key"
+    
+  # Audit logging
+  audit:
+    enabled: true
+    log_external_calls: true
+    include_response_metadata: true
