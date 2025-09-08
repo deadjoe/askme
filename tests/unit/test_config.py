@@ -1,0 +1,121 @@
+"""
+Unit tests for configuration management.
+"""
+
+import pytest
+
+from askme.core.config import (
+    DatabaseConfig,
+    EmbeddingConfig,
+    HybridConfig,
+    RerankConfig,
+    Settings,
+)
+
+
+class TestDatabaseConfig:
+    """Test database configuration."""
+
+    def test_default_values(self):
+        """Test default configuration values."""
+        config = DatabaseConfig()
+        assert config.milvus.host == "localhost"
+        assert config.milvus.port == 19530
+        assert config.milvus.collection_name == "askme_hybrid"
+
+    def test_custom_values(self):
+        """Test custom configuration values."""
+        config = DatabaseConfig(
+            host="custom-host", port=9999, collection_name="custom_collection"
+        )
+        assert config.host == "custom-host"
+        assert config.port == 9999
+        assert config.collection_name == "custom_collection"
+
+
+class TestEmbeddingConfig:
+    """Test embedding configuration."""
+
+    def test_default_values(self):
+        """Test default embedding configuration."""
+        config = EmbeddingConfig()
+        assert config.model == "BAAI/bge-m3"
+        assert config.dimension == 1024
+        assert config.batch_size == 32
+
+    def test_custom_values(self):
+        """Test custom embedding configuration."""
+        config = EmbeddingConfig(model="custom-model", dimension=512, batch_size=16)
+        assert config.model == "custom-model"
+        assert config.dimension == 512
+        assert config.batch_size == 16
+
+
+class TestHybridConfig:
+    """Test hybrid search configuration."""
+
+    def test_default_values(self):
+        """Test default hybrid search configuration."""
+        config = HybridConfig()
+        assert config.alpha == 0.5
+        assert config.use_rrf is True
+        assert config.rrf_k == 60
+        assert config.topk == 50
+
+    def test_alpha_validation(self):
+        """Test alpha value validation."""
+        # Valid alpha values
+        config = HybridConfig(alpha=0.0)
+        assert config.alpha == 0.0
+
+        config = HybridConfig(alpha=1.0)
+        assert config.alpha == 1.0
+
+        config = HybridConfig(alpha=0.5)
+        assert config.alpha == 0.5
+
+
+class TestRerankConfig:
+    """Test reranking configuration."""
+
+    def test_default_values(self):
+        """Test default reranking configuration."""
+        config = RerankConfig()
+        assert config.local_enabled is True
+        assert config.cohere_enabled is False
+        assert config.top_n == 8
+        assert config.score_threshold == 0.0
+
+    def test_custom_values(self):
+        """Test custom reranking configuration."""
+        config = RerankConfig(
+            local_enabled=False,
+            cohere_enabled=True,
+            top_n=5,
+            score_threshold=0.7,
+        )
+        assert config.local_enabled is False
+        assert config.cohere_enabled is True
+        assert config.top_n == 5
+        assert config.score_threshold == 0.7
+
+
+class TestSettings:
+    """Test main settings class."""
+
+    def test_default_settings(self):
+        """Test default settings creation."""
+        settings = Settings()
+        assert settings.vector_backend == "milvus"
+        assert isinstance(settings.database, DatabaseConfig)
+        assert isinstance(settings.embedding, EmbeddingConfig)
+        assert isinstance(settings.hybrid, HybridConfig)
+        assert isinstance(settings.rerank, RerankConfig)
+
+    def test_nested_config_access(self):
+        """Test accessing nested configuration values."""
+        settings = Settings()
+        assert settings.database.host == "localhost"
+        assert settings.embedding.model == "BAAI/bge-m3"
+        assert settings.hybrid.alpha == 0.5
+        assert settings.rerank.top_n == 8

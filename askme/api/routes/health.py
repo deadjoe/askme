@@ -3,16 +3,17 @@ Health check endpoints.
 """
 
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from askme.core.config import get_settings, Settings
+from askme.core.config import Settings, get_settings
 
 
 class HealthResponse(BaseModel):
     """Health check response model."""
+
     status: str
     timestamp: datetime
     version: str
@@ -25,7 +26,7 @@ router = APIRouter()
 @router.get("/", response_model=HealthResponse)
 async def health_check(settings: Settings = Depends(get_settings)) -> HealthResponse:
     """Basic health check endpoint."""
-    
+
     components = {
         "api": "healthy",
         "vector_backend": settings.vector_backend,
@@ -35,7 +36,7 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
             "cohere": settings.enable_cohere,
         },
     }
-    
+
     return HealthResponse(
         status="healthy",
         timestamp=datetime.utcnow(),
@@ -47,16 +48,16 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
 @router.get("/ready")
 async def readiness_check(settings: Settings = Depends(get_settings)) -> Dict[str, Any]:
     """Readiness check for container orchestration."""
-    
+
     # TODO: Add actual component readiness checks
     checks = {
         "vector_db": "ready",  # Check actual connection
         "embedding_model": "ready",  # Check model loaded
         "reranker": "ready",  # Check reranker loaded
     }
-    
+
     all_ready = all(status == "ready" for status in checks.values())
-    
+
     return {
         "ready": all_ready,
         "checks": checks,
