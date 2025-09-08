@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 import yaml
 
-from pydantic import BaseSettings, Field
-from pydantic_settings import BaseSettings as PydanticBaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class DatabaseConfig(BaseSettings):
@@ -254,7 +254,7 @@ class SecurityConfig(BaseSettings):
     audit: AuditConfig = AuditConfig()
 
 
-class Settings(PydanticBaseSettings):
+class Settings(BaseSettings):
     """Main application settings."""
     
     # Vector backend selection
