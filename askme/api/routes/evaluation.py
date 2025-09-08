@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
 from askme.evals.evaluator import EvalItem, Evaluator
+from askme.evals.pipeline_runner import run_pipeline_once
 from askme.evals.ragas_runner import run_ragas
 from askme.evals.storage import list_runs as storage_list_runs
 from askme.evals.storage import load_run as storage_load_run
 from askme.evals.storage import save_run as storage_save_run
 from askme.evals.trulens_runner import run_trulens
-from askme.evals.pipeline_runner import run_pipeline_once
 
 
 class EvalSuite(str, Enum):
@@ -141,9 +141,9 @@ router = APIRouter()
 
 @router.post("/run", response_model=EvaluationResponse)
 async def run_evaluation(
-    request: EvaluationRequest,
+    req: EvaluationRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
-    http_request: Optional[Request] = None,
 ) -> EvaluationResponse:
     """
     Run evaluation suite with specified metrics.
@@ -158,9 +158,9 @@ async def run_evaluation(
     import uuid
 
     # Validate metrics
-    if request.metrics:
+    if req.metrics:
         available_metrics = set(MetricType)
-        requested_metrics = set(request.metrics)
+        requested_metrics = set(req.metrics)
         invalid_metrics = requested_metrics - available_metrics
         if invalid_metrics:
             raise HTTPException(
@@ -170,16 +170,18 @@ async def run_evaluation(
     run_id = str(uuid.uuid4())
 
     # 构建样本：优先使用数据集（由 suite 或 dataset_path 指定），否则回退到固定问题
-    request_samples = max(1, (request.sample_size or 3))
+    request_samples = max(1, (req.sample_size or 3))
     sample_rows: List[Dict[str, Any]] = []
 
     # 解析数据集路径
     dataset_path: Optional[Path] = None
-    if request.dataset_path:
-        dataset_path = Path(request.dataset_path)
+    if req.dataset_path:
+        dataset_path = Path(req.dataset_path)
     else:
         # 按 suite 映射到默认数据集
-        suite_name = request.suite.value if isinstance(request.suite, EvalSuite) else str(request.suite)
+        suite_name = (
+            req.suite.value if isinstance(req.suite, EvalSuite) else str(req.suite)
+        )
         ds_map = settings.evaluation.datasets
         if suite_name == EvalSuite.BASELINE.value and ds_map.baseline:
             dataset_path = Path(ds_map.baseline)
@@ -187,10 +189,7 @@ async def run_evaluation(
             dataset_path = Path(ds_map.custom)
 
     try:
-        if http_request is None:
-            raise RuntimeError("No request context")
-
-        app = http_request.app
+        app = request.app
 
         if dataset_path and dataset_path.exists():
             # 逐条问题跑端到端管线
@@ -274,8 +273,7 @@ async def run_evaluation(
                 # thresholds for triad can reuse trulens_min
                 threshold = (
                     settings.evaluation.thresholds.trulens_min
-                    if name
-                    in ("context_relevance", "groundedness", "answer_relevance")
+                    if name in ("context_relevance", "groundedness", "answer_relevance")
                     else None
                 )
                 overall_metrics.append(
@@ -284,7 +282,7 @@ async def run_evaluation(
                         value=value,
                         threshold=threshold,
                         passed=(value >= threshold) if threshold is not None else True,
-                        details={"samples": samples},
+                        details={"samples": request_samples},
                     )
                 )
         except Exception:
@@ -293,7 +291,7 @@ async def run_evaluation(
 
     # Try real Ragas evaluation
     try:
-        metric_names = [m.value for m in request.metrics] if request.metrics else None
+        metric_names = [m.value for m in req.metrics] if req.metrics else None
         ragas_scores = run_ragas(sample_rows, metrics=metric_names)
 
         # Map scores to response with thresholds
@@ -309,7 +307,7 @@ async def run_evaluation(
                     value=value,
                     threshold=threshold,
                     passed=(value >= threshold) if threshold is not None else True,
-                    details={"samples": samples},
+                    details={"samples": request_samples},
                 )
             )
 
@@ -343,7 +341,7 @@ async def run_evaluation(
                     if s.threshold is not None
                     else True,
                     details={
-                        "samples": samples,
+                        "samples": request_samples,
                         "note": "heuristic_fallback",
                         "error": str(e),
                     },
@@ -352,18 +350,18 @@ async def run_evaluation(
 
     # Optionally compute per-sample metrics for individual results
     individual_results: Optional[List[EvaluationResult]] = None
-    if request.suite in (EvalSuite.QUICK, EvalSuite.BASELINE) and False:
+    if req.suite in (EvalSuite.QUICK, EvalSuite.BASELINE) and False:
         # Disabled by default to avoid heavy per-sample evaluations; can be enabled later
         individual_results = []
 
     response = EvaluationResponse(
         run_id=run_id,
         status="completed",
-        suite=request.suite.value,
+        suite=req.suite.value,
         started_at=datetime.utcnow(),
         completed_at=datetime.utcnow(),
-        total_samples=samples,
-        processed_samples=samples,
+        total_samples=request_samples,
+        processed_samples=request_samples,
         overall_metrics=overall_metrics,
         individual_results=individual_results,
         summary={
@@ -490,6 +488,7 @@ async def delete_evaluation_run(
     """
 
     from askme.evals.storage import RUNS_DIR
+
     path = RUNS_DIR / f"{run_id}.json"
     if path.exists():
         try:

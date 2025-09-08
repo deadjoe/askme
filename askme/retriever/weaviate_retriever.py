@@ -40,8 +40,27 @@ class WeaviateRetriever(VectorRetriever):
                     auth_credentials=weaviate.AuthApiKey(self.api_key),
                 )
             else:
-                # local/self-hosted
-                self.client = weaviate.connect_to_custom(url=self.url)
+                # local/self-hosted: parse URL into host/port for client v4
+                from urllib.parse import urlparse
+
+                u = urlparse(self.url)
+                host = u.hostname or "localhost"
+                port = u.port or (443 if (u.scheme == "https") else 8080)
+                http_secure = u.scheme == "https"
+                # weaviate-client v4 requires both HTTP and gRPC params
+                grpc_host = host
+                # Heuristic: if HTTP exposed at 8081, expose gRPC at 8082 (docker run mapping); else default 50051
+                grpc_port = port + 1 if port in (8080, 8081) else 50051
+                grpc_secure = http_secure
+                self.client = weaviate.connect_to_custom(
+                    http_host=host,
+                    http_port=port,
+                    http_secure=http_secure,
+                    grpc_host=grpc_host,
+                    grpc_port=grpc_port,
+                    grpc_secure=grpc_secure,
+                    skip_init_checks=True,
+                )
 
             logger.info(f"Connected to Weaviate at {self.url}")
 
@@ -73,7 +92,11 @@ class WeaviateRetriever(VectorRetriever):
             )
 
             # Create if missing
-            existing = [c.name for c in self.client.collections.list_all()]
+            existing_raw = self.client.collections.list_all()
+            existing = [
+                c if isinstance(c, str) else getattr(c, "name", str(c))
+                for c in existing_raw
+            ]
             if self.class_name not in existing:
                 self.client.collections.create(
                     name=self.class_name,
@@ -82,9 +105,6 @@ class WeaviateRetriever(VectorRetriever):
                         wcfg.Property(name="title", data_type=wcfg.DataType.TEXT),
                     ],
                     vectorizer_config=wcfg.Configure.Vectorizer.none(),
-                    vector_index_config=wcfg.Configure.VectorIndex.hnsw(
-                        distance=metric_enum
-                    ),
                 )
                 logger.info(f"Created Weaviate collection: {self.class_name}")
 
@@ -95,26 +115,29 @@ class WeaviateRetriever(VectorRetriever):
             raise
 
     async def insert_documents(self, documents: List[Document]) -> List[str]:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
             ids: List[str] = []
             # dynamic batching
-            with self.collection.batch.dynamic() as batch:
+            import uuid as _uuid
+
+            with col.batch.dynamic() as batch:
                 for doc in documents:
                     vec = doc.embedding
+                    if hasattr(vec, "tolist"):
+                        vec = vec.tolist()  # ensure Python list for client
+                    uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, doc.id))
                     props = {
+                        "doc_id": doc.id,
                         "content": doc.content,
                         "title": doc.metadata.get("title", doc.id),
                     }
                     # include metadata into properties (shallow merge; avoid collisions)
                     for k, v in doc.metadata.items():
-                        if k not in props and isinstance(
-                            v, (str, int, float, bool)
-                        ):
+                        if k not in props and isinstance(v, (str, int, float, bool)):
                             props[k] = v
-                    batch.add_object(properties=props, uuid=doc.id, vector=vec)
-                    ids.append(doc.id)
+                    batch.add_object(properties=props, uuid=uid, vector=vec)
+                    ids.append(uid)
             return ids
         except Exception as e:
             logger.error(f"Failed to insert into Weaviate: {e}")
@@ -126,11 +149,10 @@ class WeaviateRetriever(VectorRetriever):
         topk: int = 50,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[RetrievalResult]:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
             where = self._build_where(filters) if filters else None
-            res = self.collection.query.near_vector(
+            res = col.query.near_vector(
                 near_vector=query_embedding,
                 limit=topk,
                 filters=where,
@@ -139,13 +161,14 @@ class WeaviateRetriever(VectorRetriever):
             )
             out: List[RetrievalResult] = []
             for rank, o in enumerate(res.objects, 1):
+                props = o.properties or {}
                 doc = Document(
-                    id=str(o.uuid),
-                    content=str(o.properties.get("content", "")),
+                    id=str(props.get("doc_id", o.uuid)),
+                    content=str(props.get("content", "")),
                     metadata={
                         k: v
-                        for k, v in (o.properties or {}).items()
-                        if k not in {"content", "title"}
+                        for k, v in props.items()
+                        if k not in {"content", "title", "doc_id"}
                     },
                 )
                 score = float(getattr(o.metadata, "score", 0.0) or 0.0)
@@ -175,14 +198,13 @@ class WeaviateRetriever(VectorRetriever):
         query_terms: Dict[int, float],
         params: HybridSearchParams,
     ) -> List[RetrievalResult]:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
             query_text = params.original_query or ""
             where = self._build_where(params.filters) if params.filters else None
             # Use native hybrid with alpha as specified;
             # relative score fusion is default
-            res = self.collection.query.hybrid(
+            res = col.query.hybrid(
                 query=query_text,
                 vector=query_embedding,
                 alpha=params.alpha,
@@ -193,13 +215,14 @@ class WeaviateRetriever(VectorRetriever):
             )
             out: List[RetrievalResult] = []
             for rank, o in enumerate(res.objects, 1):
+                props = o.properties or {}
                 doc = Document(
-                    id=str(o.uuid),
-                    content=str(o.properties.get("content", "")),
+                    id=str(props.get("doc_id", o.uuid)),
+                    content=str(props.get("content", "")),
                     metadata={
                         k: v
-                        for k, v in (o.properties or {}).items()
-                        if k not in {"content", "title"}
+                        for k, v in props.items()
+                        if k not in {"content", "title", "doc_id"}
                     },
                 )
                 score = float(getattr(o.metadata, "score", 0.0) or 0.0)
@@ -214,19 +237,31 @@ class WeaviateRetriever(VectorRetriever):
             raise
 
     async def get_document(self, doc_id: str) -> Optional[Document]:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
-            o = self.collection.data.objects.get_by_id(doc_id)
+            # Allow lookup by original doc_id (property) or by uuid; prefer property lookup
+            try:
+                where = Filter.by_property("doc_id").equal(doc_id)
+                res = col.query.fetch_objects(
+                    filters=where,
+                    limit=1,
+                    return_properties=["content", "title", "doc_id"],
+                )
+                o = res.objects[0] if res.objects else None
+            except Exception:
+                o = None
+            if not o:
+                o = col.data.objects.get_by_id(doc_id)
             if not o:
                 return None
+            props = o.properties or {}
             return Document(
-                id=str(o.uuid),
-                content=str((o.properties or {}).get("content", "")),
+                id=str(props.get("doc_id", o.uuid)),
+                content=str(props.get("content", "")),
                 metadata={
                     k: v
-                    for k, v in (o.properties or {}).items()
-                    if k not in {"content", "title"}
+                    for k, v in props.items()
+                    if k not in {"content", "title", "doc_id"}
                 },
             )
         except Exception as e:
@@ -234,10 +269,9 @@ class WeaviateRetriever(VectorRetriever):
             raise
 
     async def delete_document(self, doc_id: str) -> bool:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
-            self.collection.data.objects.delete_by_id(doc_id)
+            col.data.objects.delete_by_id(doc_id)
             return True
         except Exception as e:
             logger.error(f"Weaviate delete_document failed: {e}")
@@ -253,10 +287,9 @@ class WeaviateRetriever(VectorRetriever):
             return False
 
     async def get_collection_stats(self) -> Dict[str, Any]:
-        if not self.collection:
-            raise RuntimeError("Collection not initialized")
+        col = await self._ensure_collection()
         try:
-            info = self.collection.config.get()
+            info = col.config.get()
             # Weaviate does not expose entity count here without aggregate query;
             # return minimal config
             return {
@@ -273,6 +306,21 @@ class WeaviateRetriever(VectorRetriever):
         except Exception as e:
             logger.error(f"Weaviate get_collection_stats failed: {e}")
             raise
+
+    async def _ensure_collection(self):
+        if self.client is None:
+            await self.connect()
+        assert self.client is not None
+        if self.collection is None:
+            try:
+                self.collection = self.client.collections.get(self.class_name)
+            except Exception:
+                # Try to create then get
+                await self.create_collection(self.dimension)
+                self.collection = self.client.collections.get(self.class_name)
+        if self.collection is None:
+            raise RuntimeError("Collection not initialized")
+        return self.collection
 
     def _build_where(self, filters: Dict[str, Any]) -> Optional[Filter]:
         # Support basic equality / IN filters on top-level properties

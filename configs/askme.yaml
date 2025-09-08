@@ -2,7 +2,7 @@
 # Version: 2025-09
 
 # Vector Database Backend
-vector_backend: milvus  # milvus | weaviate | qdrant
+vector_backend: weaviate  # milvus | weaviate | qdrant
 
 # Database Connection
 database:
@@ -14,7 +14,7 @@ database:
     secure: false
     collection_name: "askme_hybrid"
   weaviate:
-    url: "http://localhost:8080"
+    url: "http://localhost:8081"
     api_key: ""
     class_name: "AskmeDocument"
   qdrant:
@@ -112,7 +112,7 @@ document:
 
 # Generation (LLM) Configuration
 generation:
-  provider: "simple"   # simple | ollama | openai
+  provider: "ollama"   # simple | ollama | openai
   # Default model settings
   model_name: "gpt-4"
   max_tokens: 1500
