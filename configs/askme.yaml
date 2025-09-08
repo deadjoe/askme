@@ -28,12 +28,12 @@ hybrid:
   alpha: 0.5       # For alpha fusion: 0=sparse only, 1=dense only, 0.5=balanced
   rrf_k: 60        # RRF fusion parameter (typical: 20-100)
   topk: 50         # Initial retrieval candidates
-  
+
   # Search parameters
   dense_weight: 1.0
   sparse_weight: 1.0
   enable_metadata_filter: true
-  
+
 # Embedding Model Configuration
 embedding:
   model: "BAAI/bge-m3"
@@ -42,7 +42,7 @@ embedding:
   max_length: 8192
   normalize_embeddings: true
   batch_size: 32
-  
+
   # BGE-M3 specific settings
   use_fp16: true
   pooling_method: "cls"
@@ -56,13 +56,13 @@ rerank:
   local_enabled: true
   local_batch_size: 16
   local_max_length: 1024
-  
+
   # Cloud reranker (fallback)
   cohere_enabled: false  # Set via ASKME_ENABLE_COHERE=1
   cohere_model: "rerank-3.5-turbo"
   cohere_max_chunks_per_doc: 10
   cohere_return_documents: true
-  
+
   # Reranking parameters
   top_n: 8           # Final passages for generation
   score_threshold: 0.0
@@ -78,7 +78,7 @@ enhancer:
       Passage:
     max_tokens: 256
     temperature: 0.3
-  
+
   # RAG-Fusion (Multi-query generation)
   rag_fusion:
     enabled: false
@@ -86,7 +86,7 @@ enhancer:
     query_generation_prompt: |
       You are a helpful assistant that generates multiple search queries based on a single input query.
       Generate {num_queries} different but related queries that would help comprehensively answer: {original_query}
-      
+
       Queries:
     fusion_method: "rrf"  # rrf | weighted_sum | max
 
@@ -94,7 +94,7 @@ enhancer:
 document:
   # Supported formats
   supported_formats: ["pdf", "txt", "md", "html", "json", "docx"]
-  
+
   # Chunking strategy
   chunking:
     method: "semantic"  # fixed | semantic | recursive
@@ -102,7 +102,7 @@ document:
     chunk_overlap: 200
     min_chunk_size: 100
     max_chunk_size: 2000
-    
+
   # Text processing
   preprocessing:
     remove_extra_whitespace: true
@@ -112,24 +112,28 @@ document:
 
 # Generation (LLM) Configuration
 generation:
+  provider: "simple"   # simple | ollama
   # Default model settings
   model_name: "gpt-4"
   max_tokens: 1500
   temperature: 0.1
   top_p: 0.9
-  
+  # Ollama local
+  ollama_model: "llama3.1:latest"
+  ollama_endpoint: "http://localhost:11434"
+
   # Prompt templates
   system_prompt: |
     You are a helpful assistant that answers questions based on the provided context.
     Always cite your sources using the provided document references.
     If you cannot find relevant information in the context, say so clearly.
-    
+
   user_prompt_template: |
     Context:
     {context}
-    
+
     Question: {question}
-    
+
     Please provide a detailed answer based on the context above. Include citations in the format [Doc ID: title].
 
 # Evaluation Configuration
@@ -139,18 +143,18 @@ evaluation:
     enabled: true
     metrics: ["context_relevance", "groundedness", "answer_relevance"]
     feedback_mode: "with_cot_reasons"
-    
+
   # Ragas metrics
   ragas:
     enabled: true
     version: "0.2.0"
     metrics: ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
-    
+
   # Evaluation datasets
   datasets:
     baseline: "data/eval/baseline_qa.jsonl"
     custom: "data/eval/custom_qa.jsonl"
-    
+
   # Quality thresholds
   thresholds:
     trulens_min: 0.7
@@ -165,13 +169,13 @@ api:
   workers: 1
   reload: false
   access_log: true
-  
+
   # Rate limiting
   rate_limit:
     enabled: true
     requests_per_minute: 60
     burst_size: 10
-    
+
   # CORS
   cors:
     allow_origins: ["*"]
@@ -182,14 +186,14 @@ api:
 logging:
   level: "INFO"  # DEBUG | INFO | WARNING | ERROR
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  
+
   # File logging
   file:
     enabled: true
     path: "logs/askme.log"
     rotation: "1 day"
     retention: "30 days"
-    
+
   # Structured logging
   structured:
     enabled: true
@@ -202,13 +206,13 @@ performance:
     enabled: true
     ttl_seconds: 3600
     max_size: 1000
-    
+
   # Batch processing
   batch:
     embedding_batch_size: 32
     rerank_batch_size: 16
     max_concurrent_requests: 10
-    
+
   # Timeouts
   timeouts:
     embedding_timeout: 30
@@ -223,12 +227,12 @@ security:
     log_queries: false
     log_documents: false
     anonymize_logs: true
-    
+
   # API security
   api_keys:
     enabled: false
     header_name: "X-API-Key"
-    
+
   # Audit logging
   audit:
     enabled: true

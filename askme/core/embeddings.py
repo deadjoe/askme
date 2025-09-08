@@ -65,7 +65,7 @@ class BGEEmbeddingService:
 
         try:
             # Process in batches to manage memory
-            results = []
+            results: List[Dict[str, Any]] = []
 
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i : i + batch_size]
@@ -204,7 +204,10 @@ class BGEEmbeddingService:
                 query_text = query
 
             # Encode query
-            results = self.model.encode(
+            model = self.model
+            if model is None:
+                raise RuntimeError("Embedding model not initialized")
+            results = model.encode(
                 [query_text],
                 batch_size=1,
                 max_length=self.config.max_length,

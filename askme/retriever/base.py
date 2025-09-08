@@ -39,6 +39,9 @@ class HybridSearchParams:
     rrf_k: int = 60  # RRF parameter
     topk: int = 50  # Number of candidates to retrieve
     filters: Optional[Dict[str, Any]] = None
+    original_query: Optional[
+        str
+    ] = None  # For backends needing raw text (e.g., Weaviate)
 
 
 class VectorRetriever(ABC):

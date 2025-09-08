@@ -161,16 +161,27 @@ class DocumentConfig(BaseSettings):
 class GenerationConfig(BaseSettings):
     """LLM generation configuration."""
 
+    # Provider: simple (local template), ollama, openai
+    provider: str = "simple"
     model_name: str = "gpt-4"
     max_tokens: int = 1500
     temperature: float = 0.1
     top_p: float = 0.9
 
-    system_prompt: str = """You are a helpful assistant that answers questions based on the provided context.
+    # Ollama local settings
+    ollama_model: str = "llama3.1:latest"
+    ollama_endpoint: str = "http://localhost:11434"
+
+    # OpenAI-compatible settings
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key_env: str = "OPENAI_API_KEY"  # env var name to read
+
+    system_prompt: str = """You are a helpful assistant that answers questions based on the provided context.  # noqa: E501
 Always cite your sources using the provided document references.
 If you cannot find relevant information in the context, say so clearly."""
 
-    user_prompt_template: str = """Context:
+    user_prompt_template: str = """Context:  # noqa: E501
 {context}
 
 Question: {question}
@@ -323,6 +334,7 @@ class Settings(BaseSettings):
 
     # Environment variable overrides (kept simple for typing and tests)
     enable_cohere: bool = False
+    enable_ollama: bool = False
     log_level: str = "INFO"
 
     class Config:

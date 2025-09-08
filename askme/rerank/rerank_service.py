@@ -93,8 +93,8 @@ class BGEReranker(BaseReranker):
 
         try:
             # Prepare query-document pairs for reranking
-            pairs = []
-            original_docs = []
+            pairs: List[List[str]] = []
+            original_docs: List[RetrievalResult] = []
 
             for doc_result in documents:
                 pairs.append([query, doc_result.document.content])
@@ -102,7 +102,7 @@ class BGEReranker(BaseReranker):
 
             # Get reranking scores in batches
             batch_size = self.config.local_batch_size
-            all_scores = []
+            all_scores: List[float] = []
 
             for i in range(0, len(pairs), batch_size):
                 batch_pairs = pairs[i : i + batch_size]
@@ -124,7 +124,7 @@ class BGEReranker(BaseReranker):
                 all_scores.extend(batch_scores)
 
             # Create rerank results
-            rerank_results = []
+            rerank_results: List[RerankResult] = []
 
             for i, (original_result, rerank_score) in enumerate(
                 zip(original_docs, all_scores)

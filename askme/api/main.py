@@ -15,9 +15,17 @@ from askme.api.routes import evaluation, health, ingest, query
 from askme.core.config import get_settings
 from askme.core.embeddings import BGEEmbeddingService
 from askme.core.logging_config import setup_logging
+from askme.generation.generator import (
+    BaseGenerator,
+    LocalOllamaGenerator,
+    OpenAIChatGenerator,
+    SimpleTemplateGenerator,
+)
 from askme.ingest.ingest_service import IngestionService
 from askme.rerank.rerank_service import RerankingService
+from askme.retriever.base import VectorRetriever
 from askme.retriever.milvus_retriever import MilvusRetriever
+from askme.retriever.weaviate_retriever import WeaviateRetriever
 
 
 @asynccontextmanager
@@ -34,33 +42,68 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Build services (lazy heavy loads)
         embedding_service = BGEEmbeddingService(settings.embedding)
 
-        retriever_cfg = {
-            "host": settings.database.milvus.host,
-            "port": settings.database.milvus.port,
-            "username": settings.database.milvus.username,
-            "password": settings.database.milvus.password,
-            "secure": settings.database.milvus.secure,
-            "collection_name": settings.database.milvus.collection_name,
-            "dimension": settings.embedding.dimension,
-        }
-        retriever = MilvusRetriever(retriever_cfg)
+        # Choose retriever backend
+        retriever: VectorRetriever
+        if settings.vector_backend.lower() == "weaviate":
+            retriever_cfg = {
+                "url": settings.database.weaviate.url,
+                "api_key": settings.database.weaviate.api_key,
+                "class_name": settings.database.weaviate.class_name,
+                "dimension": settings.embedding.dimension,
+            }
+            retriever = WeaviateRetriever(retriever_cfg)
+        else:
+            retriever_cfg = {
+                "host": settings.database.milvus.host,
+                "port": settings.database.milvus.port,
+                "username": settings.database.milvus.username,
+                "password": settings.database.milvus.password,
+                "secure": settings.database.milvus.secure,
+                "collection_name": settings.database.milvus.collection_name,
+                "dimension": settings.embedding.dimension,
+            }
+            retriever = MilvusRetriever(retriever_cfg)
 
         cohere_api_key = os.getenv("COHERE_API_KEY") if settings.enable_cohere else None
         reranking_service = RerankingService(settings.rerank, cohere_api_key)
 
         ingestion_service = IngestionService(retriever, embedding_service, settings)
 
+        # Generator: prefer local Ollama when explicitly enabled, else simple
+        generator: BaseGenerator
+        enable_ollama = os.getenv("ASKME_ENABLE_OLLAMA", "0") in {"1", "true", "True"}
+        if enable_ollama or settings.generation.provider.lower() == "ollama":
+            generator = LocalOllamaGenerator(settings.generation)
+        elif settings.generation.provider.lower() == "openai":
+            generator = OpenAIChatGenerator(settings.generation)
+        else:
+            generator = SimpleTemplateGenerator(settings.generation)
+
         # Attach to app state
         app.state.embedding_service = embedding_service
         app.state.retriever = retriever
         app.state.reranking_service = reranking_service
         app.state.ingestion_service = ingestion_service
+        app.state.generator = generator
 
         logger.info("askme API server components initialized")
 
     except Exception as e:
         logger.error(f"Failed to initialize askme components: {e}")
         raise
+
+    # Eager initialize heavy services so real path works without mocks
+    try:
+        if hasattr(app.state, "ingestion_service"):
+            await app.state.ingestion_service.initialize()
+        if hasattr(app.state, "reranking_service"):
+            await app.state.reranking_service.initialize()
+        # Embedding model is initialized by ingestion_service.initialize();
+        # generator is lightweight; LocalOllama uses HTTP on demand.
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            f"Service initialization encountered issues: {e}"
+        )
 
     yield
 
@@ -73,6 +116,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await app.state.reranking_service.cleanup()
         if hasattr(app.state, "embedding_service"):
             await app.state.embedding_service.cleanup()
+        if hasattr(app.state, "generator") and hasattr(app.state.generator, "cleanup"):
+            await app.state.generator.cleanup()
     except Exception as e:
         logger.warning(f"Error during shutdown: {e}")
 

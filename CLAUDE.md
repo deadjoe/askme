@@ -10,7 +10,7 @@ AskMe is a production-ready hybrid RAG (Retrieval-Augmented Generation) system t
 
 ## Architecture Flow
 ```
-Documents → Ingest → Vector DB (Hybrid Index) → Query → Retrieve (topK=50) → 
+Documents → Ingest → Vector DB (Hybrid Index) → Query → Retrieve (topK=50) →
 Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 ```
 
@@ -21,6 +21,7 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 - **Fallback**: Cohere Rerank 3.5 (cloud, requires ASKME_ENABLE_COHERE=1)
 - **Evaluation**: TruLens + Ragas v0.2+
 - **Framework**: FastAPI + Python 3.10+
+- **Local LLM (optional)**: Ollama (enable via ASKME_ENABLE_OLLAMA=1)
 
 ## Core Commands
 
@@ -52,6 +53,9 @@ scripts/evaluate.sh --suite=baseline
 
 # Custom evaluation with specific metrics
 scripts/evaluate.sh --metrics="faithfulness,context_precision"
+
+# Quick suite (small sample for CI)
+scripts/evaluate.sh --suite=quick --sample-size=3
 ```
 
 ## Configuration Management
@@ -153,6 +157,7 @@ ASKME_EMBEDDING_MODEL=BAAI/bge-m3
 
 # Optional
 ASKME_ENABLE_COHERE=1        # Enable Cohere reranking
+ASKME_ENABLE_OLLAMA=1        # Enable local Ollama generator
 ASKME_LOG_LEVEL=INFO
 ASKME_BATCH_SIZE=32
 ```
