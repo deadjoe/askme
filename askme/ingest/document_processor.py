@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 import aiofiles
 import pypdf
 from bs4 import BeautifulSoup
-from markdownify import markdownify  # type: ignore[import-untyped]
+from markdownify import markdownify
 
 from askme.retriever.base import Document
 
@@ -215,8 +215,8 @@ class HTMLProcessor(DocumentProcessor):
             meta_tags = soup.find_all("meta")
             html_meta = {}
             for tag in meta_tags:
-                name = tag.get("name") or tag.get("property")  # type: ignore[union-attr]
-                content = tag.get("content")  # type: ignore[union-attr]
+                name = tag.get("name") or tag.get("property")
+                content = tag.get("content")
                 if name and content:
                     html_meta[name] = content
 

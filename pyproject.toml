@@ -47,6 +47,7 @@ dependencies = [
 
     # Search and ranking
     "rank-bm25>=0.2.2",
+    "openai>=1.40.0",
 ]
 
 [project.optional-dependencies]

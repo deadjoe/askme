@@ -4,7 +4,7 @@ Query and retrieval endpoints.
 
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -105,6 +105,10 @@ class RetrievalRequest(BaseModel):
         description="Number of candidates to retrieve",
         alias="topK",
     )
+    use_hyde: bool = Field(default=False, description="Use HyDE query expansion")
+    use_rag_fusion: bool = Field(
+        default=False, description="Use RAG-Fusion multi-query"
+    )
     alpha: float = Field(
         default=0.5, ge=0, le=1, description="Hybrid search alpha parameter"
     )
@@ -131,7 +135,7 @@ router = APIRouter()
 async def query_documents(
     request: QueryRequest,
     settings: Settings = Depends(get_settings),
-    http_request: Request = None,  # type: ignore[assignment]
+    http_request: Optional[Request] = None,
 ) -> QueryResponse:
     """
     Query documents using hybrid search with optional enhancements.
@@ -183,6 +187,7 @@ async def query_documents(
             rrf_k=request.rrf_k,
             topk=request.topk,
             filters=request.filters,
+            original_query=request.q,
         )
         result_lists = []
         for q in query_list:
@@ -199,7 +204,9 @@ async def query_documents(
         )
         t2 = time.monotonic()
         # 4) Rerank
-        reranked = await reranking_service.rerank(  # type: ignore[attr-defined]
+        from askme.rerank.rerank_service import RerankingService
+        rerank_svc = cast(RerankingService, reranking_service)
+        reranked = await rerank_svc.rerank(
             request.q, results, top_n=request.max_passages, prefer_local=True
         )
         t3 = time.monotonic()
@@ -219,15 +226,29 @@ async def query_documents(
                 )
             )
 
-        # Minimal answer template
-        titles = ", ".join([c.title for c in citations]) or "context"
-        answer = f"Based on retrieved context, here is an answer about '{request.q}'. Sources: {titles}."
+        # 5) Generate answer via configured generator
+        from askme.generation.generator import Passage  # local import to avoid cycles
+
+        generator = getattr(app.state, "generator", None)
+        passages = [
+            Passage(doc_id=c.doc_id, title=c.title, content=c.content, score=c.score)
+            for c in citations
+        ]
+        if generator is None:
+            # Fallback minimal template
+            titles = ", ".join([c.title for c in citations]) or "context"
+            answer = (
+                f"Based on retrieved context, here is an answer about '{request.q}'. "
+                f"Sources: {titles}."
+            )
+        else:
+            answer = await generator.generate(request.q, passages)
 
         debug_info = None
         if request.include_debug:
             debug_info = RetrievalDebugInfo(
-                bm25_hits=request.topk,  # unknown here; report topk as proxy
-                dense_hits=request.topk,
+                bm25_hits=len(results),
+                dense_hits=len(results),
                 fusion_method="rrf" if request.use_rrf else "alpha",
                 alpha=request.alpha,
                 rrf_k=request.rrf_k if request.use_rrf else None,
@@ -289,7 +310,10 @@ async def query_documents(
         )
 
     return QueryResponse(
-        answer=f"Based on the provided context, {request.q}... [Doc 001: Sample Document 1] [Doc 002: Sample Document 2]",
+        answer=(
+            f"Based on the provided context, {request.q}... "
+            f"[Doc 001: Sample Document 1] [Doc 002: Sample Document 2]"
+        ),
         citations=mock_citations,
         query_id=str(uuid.uuid4()),
         timestamp=datetime.utcnow(),
@@ -301,7 +325,7 @@ async def query_documents(
 async def retrieve_documents(
     request: RetrievalRequest,
     settings: Settings = Depends(get_settings),
-    http_request: Request = None,  # type: ignore[assignment]
+    http_request: Optional[Request] = None,
 ) -> RetrievalResponse:
     """
     Retrieve documents without LLM generation.
@@ -331,6 +355,7 @@ async def retrieve_documents(
             rrf_k=request.rrf_k,
             topk=request.topk,
             filters=request.filters,
+            original_query=request.q,
         )
         result_lists = []
         query_list: List[str] = [request.q]
@@ -372,8 +397,8 @@ async def retrieve_documents(
             )
 
         debug_info = RetrievalDebugInfo(
-            bm25_hits=request.topk,
-            dense_hits=request.topk,
+            bm25_hits=len(results),
+            dense_hits=len(results),
             fusion_method="rrf" if request.use_rrf else "alpha",
             alpha=request.alpha,
             rrf_k=request.rrf_k if request.use_rrf else None,

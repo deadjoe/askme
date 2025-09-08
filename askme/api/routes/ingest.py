@@ -58,7 +58,9 @@ router = APIRouter()
 
 @router.post("/", response_model=IngestResponse)
 async def ingest_documents(
-    request: IngestRequest, settings: Settings = Depends(get_settings)
+    request: IngestRequest,
+    settings: Settings = Depends(get_settings),
+    http_request: Request | None = None,
 ) -> IngestResponse:
     """
     Ingest documents from various sources.
@@ -68,9 +70,6 @@ async def ingest_documents(
     - URLs (web pages, APIs)
     - Various formats: PDF, TXT, MD, HTML, JSON, DOCX
     """
-
-    # Generate unique task ID
-    task_id = str(uuid.uuid4())
 
     # Validate source type
     if request.source not in ["file", "dir", "url"]:
@@ -96,18 +95,43 @@ async def ingest_documents(
                 status_code=400, detail=f"Path is not a directory: {request.path}"
             )
 
-    # TODO: Implement actual ingestion logic
-    # This would involve:
-    # 1. Document parsing and chunking
-    # 2. Embedding generation
-    # 3. Vector database storage
-    # 4. Metadata indexing
+    # Route to ingestion service
+    service = None
+    if http_request is not None and hasattr(
+        http_request.app.state, "ingestion_service"
+    ):
+        service = http_request.app.state.ingestion_service
+    else:
+        # Fallback creation (tests may patch this)
+        service = cast(Any, IngestionService)(
+            vector_retriever=None, embedding_service=None, settings=settings
+        )
 
-    return IngestResponse(
-        task_id=task_id,
-        status="queued",
-        message=f"Ingestion task queued for {request.source}: {request.path}",
-    )
+    try:
+        if request.source == "file":
+            task_id = await service.ingest_file(
+                file_path=request.path,
+                metadata=request.metadata,
+                tags=request.tags,
+                overwrite=request.overwrite,
+            )
+        elif request.source == "dir":
+            task_id = await service.ingest_directory(
+                dir_path=request.path,
+                recursive=True,
+                metadata=request.metadata,
+                tags=request.tags,
+                overwrite=request.overwrite,
+            )
+        else:
+            # URL ingestion not yet implemented
+            raise HTTPException(status_code=501, detail="URL ingestion not implemented")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return IngestResponse(task_id=task_id, status="queued")
 
 
 class IngestFilePayload(BaseModel):
@@ -123,7 +147,7 @@ class IngestFilePayload(BaseModel):
 async def ingest_file_endpoint(
     payload: IngestFilePayload,
     settings: Settings = Depends(get_settings),
-    request: Request = None,  # type: ignore[assignment]
+    request: Optional[Request] = None,
 ) -> IngestResponse:
     """Ingest a single file using IngestionService (for test contract)."""
 
@@ -158,7 +182,7 @@ class IngestDirectoryPayload(BaseModel):
 async def ingest_directory_endpoint(
     payload: IngestDirectoryPayload,
     settings: Settings = Depends(get_settings),
-    request: Request = None,  # type: ignore[assignment]
+    request: Optional[Request] = None,
 ) -> IngestResponse:
     """Ingest a directory using IngestionService (for test contract)."""
 
@@ -205,10 +229,9 @@ async def upload_and_ingest(
                     f"Supported: {', '.join(supported_extensions)}",
                 )
 
-    # Parse tags
-    tag_list = []
+    # Parse tags (placeholder until upload processing is implemented)
     if tags:
-        tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+        _ = [tag.strip() for tag in tags.split(",") if tag.strip()]
 
     # TODO: Implement file upload and ingestion
     # This would involve:
@@ -226,24 +249,36 @@ async def upload_and_ingest(
 
 @router.get("/status/{task_id}", response_model=IngestStatusResponse)
 async def get_ingestion_status(
-    task_id: str, settings: Settings = Depends(get_settings)
+    task_id: str,
+    settings: Settings = Depends(get_settings),
+    request: Request | None = None,
 ) -> IngestStatusResponse:
     """
     Get the status of an ingestion task.
     """
 
-    # TODO: Implement actual status tracking
-    # This would involve querying a task queue or database
+    service = None
+    if request is not None and hasattr(request.app.state, "ingestion_service"):
+        service = request.app.state.ingestion_service
+    else:
+        raise HTTPException(status_code=503, detail="Ingestion service unavailable")
 
+    task = await service.get_task_status(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Map to response
     return IngestStatusResponse(
-        task_id=task_id,
-        status="completed",  # Mock status
-        progress=1.0,
-        documents_processed=10,
-        total_documents=10,
-        started_at="2025-09-08T10:00:00Z",
-        completed_at="2025-09-08T10:05:00Z",
-        error_message=None,
+        task_id=task.task_id,
+        status=task.status.value,
+        progress=(
+            (task.processed_chunks / task.total_chunks) if task.total_chunks else 0.0
+        ),
+        documents_processed=task.processed_files,
+        total_documents=task.total_files,
+        error_message=task.error_message,
+        started_at=(task.started_at.isoformat() if task.started_at else ""),
+        completed_at=(task.completed_at.isoformat() if task.completed_at else None),
     )
 
 
@@ -266,20 +301,25 @@ async def cancel_ingestion_task(
 
 @router.get("/stats")
 async def get_ingestion_stats(
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_settings), request: Request | None = None
 ) -> Dict[str, Any]:
     """
     Get overall ingestion statistics.
     """
 
-    # TODO: Implement actual statistics
+    service = None
+    if request is not None and hasattr(request.app.state, "ingestion_service"):
+        service = request.app.state.ingestion_service
+    else:
+        raise HTTPException(status_code=503, detail="Ingestion service unavailable")
 
+    stats = await service.get_ingestion_stats()
     return {
-        "total_documents": 1000,
-        "total_chunks": 50000,
-        "total_size_bytes": 100000000,
+        "total_documents": stats.total_documents,
+        "total_chunks": stats.total_chunks,
+        "total_size_bytes": stats.total_size_bytes,
         "supported_formats": settings.document.supported_formats,
-        "active_tasks": 0,
-        "completed_tasks": 42,
-        "failed_tasks": 1,
+        "processing_time_seconds": stats.processing_time_seconds,
+        "chunks_per_document": stats.chunks_per_document,
+        "errors": stats.errors,
     }
