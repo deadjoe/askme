@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
+from askme.enhancer.query_enhancer import generate_fusion_queries, generate_hyde_passage
+from askme.retriever.base import HybridSearchParams, SearchFusion
 
 
 class Citation(BaseModel):
@@ -162,14 +164,19 @@ async def query_documents(
         if not embedding_service or not retriever or not reranking_service:
             raise RuntimeError("Services not initialized")
 
-        from askme.retriever.base import HybridSearchParams
-
         t0 = time.monotonic()
-        # 1) (Optional) enhancement omitted for MVP
-        # 2) Encode query
-        q_emb = await embedding_service.encode_query(request.q)
+        # 1) (Optional) enhancement
+        query_list: List[str] = [request.q]
+        if request.use_hyde:
+            hyde_text = generate_hyde_passage(request.q)
+            query_list.append(hyde_text)
+        if request.use_rag_fusion:
+            fusion = generate_fusion_queries(request.q, num_queries=3)
+            # Include generated variants; original already present
+            query_list.extend([q for q in fusion if q not in query_list])
+
+        # 2) Encode + retrieve
         t1 = time.monotonic()
-        # 3) Hybrid search
         params = HybridSearchParams(
             alpha=request.alpha,
             use_rrf=request.use_rrf,
@@ -177,8 +184,18 @@ async def query_documents(
             topk=request.topk,
             filters=request.filters,
         )
-        results = await retriever.hybrid_search(
-            q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+        result_lists = []
+        for q in query_list:
+            q_emb = await embedding_service.encode_query(q)
+            res = await retriever.hybrid_search(
+                q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+            )
+            result_lists.append(res)
+        # Fuse multiple result lists (if any) with RRF; otherwise use single
+        results = (
+            SearchFusion.reciprocal_rank_fusion(result_lists, k=request.rrf_k)
+            if len(result_lists) > 1
+            else result_lists[0]
         )
         t2 = time.monotonic()
         # 4) Rerank
@@ -307,10 +324,7 @@ async def retrieve_documents(
         if not embedding_service or not retriever:
             raise RuntimeError("Services not initialized")
 
-        from askme.retriever.base import HybridSearchParams
-
         t0 = time.monotonic()
-        q_emb = await embedding_service.encode_query(request.q)
         params = HybridSearchParams(
             alpha=request.alpha,
             use_rrf=request.use_rrf,
@@ -318,8 +332,28 @@ async def retrieve_documents(
             topk=request.topk,
             filters=request.filters,
         )
-        results = await retriever.hybrid_search(
-            q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+        result_lists = []
+        query_list: List[str] = [request.q]
+        if request.use_hyde:
+            query_list.append(generate_hyde_passage(request.q))
+        if request.use_rag_fusion:
+            query_list.extend(
+                [
+                    q
+                    for q in generate_fusion_queries(request.q, 3)
+                    if q not in query_list
+                ]
+            )
+        for q in query_list:
+            q_emb = await embedding_service.encode_query(q)
+            res = await retriever.hybrid_search(
+                q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+            )
+            result_lists.append(res)
+        results = (
+            SearchFusion.reciprocal_rank_fusion(result_lists, k=request.rrf_k)
+            if len(result_lists) > 1
+            else result_lists[0]
         )
         t1 = time.monotonic()
 
