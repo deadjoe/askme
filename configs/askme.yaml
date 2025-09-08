@@ -112,7 +112,7 @@ document:
 
 # Generation (LLM) Configuration
 generation:
-  provider: "simple"   # simple | ollama
+  provider: "simple"   # simple | ollama | openai
   # Default model settings
   model_name: "gpt-4"
   max_tokens: 1500
@@ -121,6 +121,11 @@ generation:
   # Ollama local
   ollama_model: "llama3.1:latest"
   ollama_endpoint: "http://localhost:11434"
+
+  # OpenAI-compatible
+  openai_model: "gpt-4o-mini"
+  openai_base_url: "https://api.openai.com/v1"
+  openai_api_key_env: "OPENAI_API_KEY"
 
   # Prompt templates
   system_prompt: |

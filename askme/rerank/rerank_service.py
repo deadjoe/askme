@@ -8,12 +8,15 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-import cohere
-import numpy as np
-import torch
-
-# Import reranking models
-from FlagEmbedding import FlagReranker
+# 可选依赖：按需延迟导入，避免在未安装环境下阻塞其它功能
+try:
+    import numpy as _np  # type: ignore
+except Exception:  # pragma: no cover
+    _np = None  # type: ignore
+try:
+    import torch as _torch  # type: ignore
+except Exception:  # pragma: no cover
+    _torch = None  # type: ignore
 
 from askme.core.config import RerankConfig
 from askme.retriever.base import Document, RetrievalResult
@@ -56,7 +59,11 @@ class BGEReranker(BaseReranker):
     def __init__(self, config: RerankConfig):
         self.config = config
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = (
+            "cuda"
+            if (_torch and hasattr(_torch, "cuda") and _torch.cuda.is_available())
+            else "cpu"
+        )
         self._is_initialized = False
 
     async def initialize(self) -> None:
@@ -67,10 +74,13 @@ class BGEReranker(BaseReranker):
         try:
             logger.info(f"Loading BGE reranker: {self.config.local_model}")
 
+            # 延迟导入模型，以减少未安装依赖时的导入错误
+            from FlagEmbedding import FlagReranker  # type: ignore
+
             # Load BGE reranker model
             self.model = FlagReranker(
                 self.config.local_model,
-                use_fp16=True,  # Enable FP16 for efficiency
+                use_fp16=(self.device != "cpu"),  # CPU 上禁用 FP16 更稳妥
                 device=self.device,
             )
 
@@ -118,7 +128,7 @@ class BGEReranker(BaseReranker):
                 # Handle single score vs list of scores
                 if isinstance(batch_scores, (int, float)):
                     batch_scores = [batch_scores]
-                elif isinstance(batch_scores, np.ndarray):
+                elif _np is not None and isinstance(batch_scores, _np.ndarray):
                     batch_scores = batch_scores.tolist()
 
                 all_scores.extend(batch_scores)
@@ -189,8 +199,8 @@ class BGEReranker(BaseReranker):
         """Clean up BGE reranker resources."""
         if self.model is not None:
             # Clear CUDA cache if using GPU
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if _torch and hasattr(_torch, "cuda") and _torch.cuda.is_available():
+                _torch.cuda.empty_cache()
 
             self.model = None
             self._is_initialized = False
@@ -206,6 +216,9 @@ class CohereReranker(BaseReranker):
         self.client = None
 
         if api_key:
+            # 延迟导入 cohere SDK
+            import cohere  # type: ignore
+
             self.client = cohere.Client(api_key)
 
     async def rerank(

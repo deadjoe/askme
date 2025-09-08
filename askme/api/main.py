@@ -64,7 +64,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             }
             retriever = MilvusRetriever(retriever_cfg)
 
-        cohere_api_key = os.getenv("COHERE_API_KEY") if settings.enable_cohere else None
+        # Cohere 启用逻辑统一：允许通过 config 或环境变量开启；实际仅当提供 API Key 时启用
+        enable_cohere_env = os.getenv("ASKME_ENABLE_COHERE", "0") in {
+            "1",
+            "true",
+            "True",
+        }
+        cohere_api_key = (
+            os.getenv("COHERE_API_KEY")
+            if (enable_cohere_env or settings.rerank.cohere_enabled)
+            else None
+        )
+        # 若检测到 API Key，则强制打开 rerank.cohere_enabled；否则关闭以避免误报可用
+        try:
+            settings.rerank.cohere_enabled = cohere_api_key is not None
+        except Exception:
+            pass
         reranking_service = RerankingService(settings.rerank, cohere_api_key)
 
         ingestion_service = IngestionService(retriever, embedding_service, settings)
@@ -92,17 +107,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error(f"Failed to initialize askme components: {e}")
         raise
 
-    # Eager initialize heavy services so real path works without mocks
-    try:
-        if hasattr(app.state, "ingestion_service"):
-            await app.state.ingestion_service.initialize()
-        if hasattr(app.state, "reranking_service"):
-            await app.state.reranking_service.initialize()
-        # Embedding model is initialized by ingestion_service.initialize();
-        # generator is lightweight; LocalOllama uses HTTP on demand.
-    except Exception as e:
-        logging.getLogger(__name__).warning(
-            f"Service initialization encountered issues: {e}"
+    # Eager initialize heavy services so真实路径可用；允许通过环境变量跳过以便本地快速起动
+    skip_heavy = os.getenv("ASKME_SKIP_HEAVY_INIT", "0") in {"1", "true", "True"}
+    if not skip_heavy:
+        try:
+            if hasattr(app.state, "ingestion_service"):
+                await app.state.ingestion_service.initialize()
+            if hasattr(app.state, "reranking_service"):
+                await app.state.reranking_service.initialize()
+            # Embedding model is initialized by ingestion_service.initialize();
+            # generator is lightweight; LocalOllama uses HTTP on demand.
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                f"Service initialization encountered issues: {e}"
+            )
+    else:
+        logging.getLogger(__name__).info(
+            "Skipping heavy service initialization (ASKME_SKIP_HEAVY_INIT=1)"
         )
 
     yield

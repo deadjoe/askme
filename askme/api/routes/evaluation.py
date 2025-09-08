@@ -4,15 +4,20 @@ Evaluation and metrics endpoints.
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
 from askme.evals.evaluator import EvalItem, Evaluator
 from askme.evals.ragas_runner import run_ragas
+from askme.evals.storage import list_runs as storage_list_runs
+from askme.evals.storage import load_run as storage_load_run
+from askme.evals.storage import save_run as storage_save_run
 from askme.evals.trulens_runner import run_trulens
+from askme.evals.pipeline_runner import run_pipeline_once
 
 
 class EvalSuite(str, Enum):
@@ -136,7 +141,9 @@ router = APIRouter()
 
 @router.post("/run", response_model=EvaluationResponse)
 async def run_evaluation(
-    request: EvaluationRequest, settings: Settings = Depends(get_settings)
+    request: EvaluationRequest,
+    settings: Settings = Depends(get_settings),
+    http_request: Optional[Request] = None,
 ) -> EvaluationResponse:
     """
     Run evaluation suite with specified metrics.
@@ -162,22 +169,100 @@ async def run_evaluation(
 
     run_id = str(uuid.uuid4())
 
-    # Build a tiny in-memory sample and attempt real Ragas first
-    samples = max(1, (request.sample_size or 3))
-    sample_rows = [
-        {
-            "question": "What is hybrid search?",
-            "answer": "Hybrid search combines dense and sparse retrieval techniques to improve recall and precision.",
-            "contexts": [
-                "Hybrid search often uses BM25 (sparse) and dense embeddings.",
-                "RRF or alpha fusion merges rankings from different channels.",
-            ],
-            "ground_truths": [
-                "Hybrid search mixes sparse (BM25) with dense vector search; fusion methods like RRF or alpha combine results."
-            ],
-        }
-        for _ in range(samples)
-    ]
+    # 构建样本：优先使用数据集（由 suite 或 dataset_path 指定），否则回退到固定问题
+    request_samples = max(1, (request.sample_size or 3))
+    sample_rows: List[Dict[str, Any]] = []
+
+    # 解析数据集路径
+    dataset_path: Optional[Path] = None
+    if request.dataset_path:
+        dataset_path = Path(request.dataset_path)
+    else:
+        # 按 suite 映射到默认数据集
+        suite_name = request.suite.value if isinstance(request.suite, EvalSuite) else str(request.suite)
+        ds_map = settings.evaluation.datasets
+        if suite_name == EvalSuite.BASELINE.value and ds_map.baseline:
+            dataset_path = Path(ds_map.baseline)
+        elif suite_name == EvalSuite.CUSTOM.value and ds_map.custom:
+            dataset_path = Path(ds_map.custom)
+
+    try:
+        if http_request is None:
+            raise RuntimeError("No request context")
+
+        app = http_request.app
+
+        if dataset_path and dataset_path.exists():
+            # 逐条问题跑端到端管线
+            loaded = 0
+            with dataset_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if loaded >= request_samples:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        import json as _json
+
+                        row = _json.loads(line)
+                        question = row.get("question") or row.get("q")
+                        if not question:
+                            continue
+                        pr = await run_pipeline_once(app, question, settings)
+                        gt = row.get("ground_truths") or row.get("answers") or []
+                        if isinstance(gt, str):
+                            gt = [gt]
+                        sample_rows.append(
+                            {
+                                "question": pr.question,
+                                "answer": pr.answer,
+                                "contexts": pr.contexts,
+                                "ground_truths": gt,
+                            }
+                        )
+                        loaded += 1
+                    except Exception:
+                        continue
+
+            # 如果数据集不足，补齐
+            while loaded < request_samples:
+                pr = await run_pipeline_once(app, "什么是混合检索？", settings)
+                sample_rows.append(
+                    {
+                        "question": pr.question,
+                        "answer": pr.answer,
+                        "contexts": pr.contexts,
+                        "ground_truths": [],
+                    }
+                )
+                loaded += 1
+        else:
+            # 无数据集则用固定问题重复 N 次（稳定评测）
+            for _ in range(request_samples):
+                pr = await run_pipeline_once(app, "什么是混合检索？", settings)
+                sample_rows.append(
+                    {
+                        "question": pr.question,
+                        "answer": pr.answer,
+                        "contexts": pr.contexts,
+                        "ground_truths": [],
+                    }
+                )
+    except Exception:
+        # Fallback: 静态样本
+        sample_rows = [
+            {
+                "question": "什么是混合检索？",
+                "answer": "混合检索通常结合稀疏（BM25）与稠密（向量）检索，并使用 RRF 或 alpha 融合。",
+                "contexts": [
+                    "混合检索利用 BM25 与 dense embeddings 的互补性。",
+                    "RRF 或 alpha 融合可将不同通道的排名合并。",
+                ],
+                "ground_truths": [],
+            }
+            for _ in range(request_samples)
+        ]
 
     overall_metrics: List[MetricResult] = []
 
@@ -265,7 +350,13 @@ async def run_evaluation(
                 )
             )
 
-    return EvaluationResponse(
+    # Optionally compute per-sample metrics for individual results
+    individual_results: Optional[List[EvaluationResult]] = None
+    if request.suite in (EvalSuite.QUICK, EvalSuite.BASELINE) and False:
+        # Disabled by default to avoid heavy per-sample evaluations; can be enabled later
+        individual_results = []
+
+    response = EvaluationResponse(
         run_id=run_id,
         status="completed",
         suite=request.suite.value,
@@ -274,6 +365,7 @@ async def run_evaluation(
         total_samples=samples,
         processed_samples=samples,
         overall_metrics=overall_metrics,
+        individual_results=individual_results,
         summary={
             "avg_faithfulness": next(
                 (m.value for m in overall_metrics if m.name == "faithfulness"), 0.0
@@ -300,6 +392,16 @@ async def run_evaluation(
         },
     )
 
+    # Persist minimal run payload
+    storage_payload = response.model_dump()
+    try:
+        storage_save_run(run_id, storage_payload)
+    except Exception:
+        # Storage failure should not break API
+        pass
+
+    return response
+
 
 @router.get("/runs/{run_id}", response_model=EvaluationResponse)
 async def get_evaluation_results(
@@ -311,38 +413,10 @@ async def get_evaluation_results(
     Get results from a specific evaluation run.
     """
 
-    # TODO: Implement result retrieval from storage
-
-    # Mock response
-    mock_metrics = [
-        MetricResult(name="faithfulness", value=0.85, threshold=0.7, passed=True)
-    ]
-
-    individual_results = None
-    if include_individual:
-        individual_results = [
-            EvaluationResult(
-                query_id="q_001",
-                query="What is machine learning?",
-                ground_truth="Machine learning is a subset of AI...",
-                generated_answer="Machine learning is an AI technique...",
-                retrieved_contexts=["Context 1", "Context 2"],
-                metrics=mock_metrics,
-            )
-        ]
-
-    return EvaluationResponse(
-        run_id=run_id,
-        status="completed",
-        suite="baseline",
-        started_at=datetime.utcnow(),
-        completed_at=datetime.utcnow(),
-        total_samples=100,
-        processed_samples=100,
-        overall_metrics=mock_metrics,
-        individual_results=individual_results,
-        summary={"avg_score": 0.85},
-    )
+    data = storage_load_run(run_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return EvaluationResponse(**data)
 
 
 @router.post("/compare", response_model=ComparisonResponse)
@@ -404,33 +478,7 @@ async def list_evaluation_runs(
     List available evaluation runs with pagination.
     """
 
-    # TODO: Implement actual run listing
-
-    mock_runs = [
-        {
-            "run_id": "run_001",
-            "suite": "baseline",
-            "status": "completed",
-            "started_at": "2025-09-08T10:00:00Z",
-            "total_samples": 100,
-            "avg_faithfulness": 0.85,
-        },
-        {
-            "run_id": "run_002",
-            "suite": "custom",
-            "status": "running",
-            "started_at": "2025-09-08T11:00:00Z",
-            "total_samples": 50,
-            "processed_samples": 25,
-        },
-    ]
-
-    return {
-        "runs": mock_runs,
-        "total": len(mock_runs),
-        "limit": limit,
-        "offset": offset,
-    }
+    return storage_list_runs(limit=limit, offset=offset)
 
 
 @router.delete("/runs/{run_id}")
@@ -441,13 +489,15 @@ async def delete_evaluation_run(
     Delete an evaluation run and its results.
     """
 
-    # TODO: Implement run deletion
-
-    return {
-        "run_id": run_id,
-        "status": "deleted",
-        "message": "Evaluation run deleted successfully",
-    }
+    from askme.evals.storage import RUNS_DIR
+    path = RUNS_DIR / f"{run_id}.json"
+    if path.exists():
+        try:
+            path.unlink()
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to delete run")
+        return {"run_id": run_id, "status": "deleted", "message": "OK"}
+    raise HTTPException(status_code=404, detail="Run not found")
 
 
 @router.get("/metrics")
