@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
@@ -121,16 +121,20 @@ class IngestFilePayload(BaseModel):
 
 @router.post("/file", response_model=IngestResponse)
 async def ingest_file_endpoint(
-    payload: IngestFilePayload, settings: Settings = Depends(get_settings)
+    payload: IngestFilePayload,
+    settings: Settings = Depends(get_settings),
+    request: Request = None,  # type: ignore[assignment]
 ) -> IngestResponse:
     """Ingest a single file using IngestionService (for test contract)."""
 
-    # In tests this class is patched; types are relaxed here intentionally
-    service = cast(Any, IngestionService)(
-        vector_retriever=None,
-        embedding_service=None,
-        settings=settings,
-    )
+    service = None
+    if request is not None and hasattr(request.app.state, "ingestion_service"):
+        service = request.app.state.ingestion_service
+    else:
+        # In tests this class is patched; types are relaxed here intentionally
+        service = cast(Any, IngestionService)(
+            vector_retriever=None, embedding_service=None, settings=settings
+        )
     task_id = await service.ingest_file(
         file_path=payload.file_path,
         metadata=payload.metadata,
@@ -152,15 +156,19 @@ class IngestDirectoryPayload(BaseModel):
 
 @router.post("/directory", response_model=IngestResponse)
 async def ingest_directory_endpoint(
-    payload: IngestDirectoryPayload, settings: Settings = Depends(get_settings)
+    payload: IngestDirectoryPayload,
+    settings: Settings = Depends(get_settings),
+    request: Request = None,  # type: ignore[assignment]
 ) -> IngestResponse:
     """Ingest a directory using IngestionService (for test contract)."""
 
-    service = cast(Any, IngestionService)(
-        vector_retriever=None,
-        embedding_service=None,
-        settings=settings,
-    )
+    service = None
+    if request is not None and hasattr(request.app.state, "ingestion_service"):
+        service = request.app.state.ingestion_service
+    else:
+        service = cast(Any, IngestionService)(
+            vector_retriever=None, embedding_service=None, settings=settings
+        )
     task_id = await service.ingest_directory(
         dir_path=payload.directory_path,
         recursive=payload.recursive,

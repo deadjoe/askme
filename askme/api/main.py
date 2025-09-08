@@ -3,6 +3,7 @@ FastAPI application for askme hybrid RAG system.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -12,7 +13,11 @@ from fastapi.responses import JSONResponse
 
 from askme.api.routes import evaluation, health, ingest, query
 from askme.core.config import get_settings
+from askme.core.embeddings import BGEEmbeddingService
 from askme.core.logging_config import setup_logging
+from askme.ingest.ingest_service import IngestionService
+from askme.rerank.rerank_service import RerankingService
+from askme.retriever.milvus_retriever import MilvusRetriever
 
 
 @asynccontextmanager
@@ -26,17 +31,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize components
     try:
-        # Initialize vector database connection
-        logger.info(f"Initializing {settings.vector_backend} vector database")
+        # Build services (lazy heavy loads)
+        embedding_service = BGEEmbeddingService(settings.embedding)
 
-        # Initialize embedding model
-        logger.info(f"Loading embedding model: {settings.embedding.model}")
+        retriever_cfg = {
+            "host": settings.database.milvus.host,
+            "port": settings.database.milvus.port,
+            "username": settings.database.milvus.username,
+            "password": settings.database.milvus.password,
+            "secure": settings.database.milvus.secure,
+            "collection_name": settings.database.milvus.collection_name,
+            "dimension": settings.embedding.dimension,
+        }
+        retriever = MilvusRetriever(retriever_cfg)
 
-        # Initialize reranker
-        if settings.rerank.local_enabled:
-            logger.info(f"Loading local reranker: {settings.rerank.local_model}")
+        cohere_api_key = os.getenv("COHERE_API_KEY") if settings.enable_cohere else None
+        reranking_service = RerankingService(settings.rerank, cohere_api_key)
 
-        logger.info("askme API server started successfully")
+        ingestion_service = IngestionService(retriever, embedding_service, settings)
+
+        # Attach to app state
+        app.state.embedding_service = embedding_service
+        app.state.retriever = retriever
+        app.state.reranking_service = reranking_service
+        app.state.ingestion_service = ingestion_service
+
+        logger.info("askme API server components initialized")
 
     except Exception as e:
         logger.error(f"Failed to initialize askme components: {e}")
@@ -46,6 +66,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Shutting down askme API server")
+    try:
+        if hasattr(app.state, "ingestion_service"):
+            await app.state.ingestion_service.shutdown()
+        if hasattr(app.state, "reranking_service"):
+            await app.state.reranking_service.cleanup()
+        if hasattr(app.state, "embedding_service"):
+            await app.state.embedding_service.cleanup()
+    except Exception as e:
+        logger.warning(f"Error during shutdown: {e}")
 
 
 def create_app() -> FastAPI:
