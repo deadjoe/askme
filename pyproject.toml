@@ -1,0 +1,82 @@
+[project]
+name = "askme"
+version = "0.1.0"
+description = "Hybrid RAG system with BGE-M3, reranking, and evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # Core web framework
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # Vector databases - choose one primary, others optional
+    "pymilvus>=2.5.0",
+    "weaviate-client>=4.4.0",
+    "qdrant-client>=1.10.0",
+    
+    # Embeddings and reranking
+    "sentence-transformers>=2.7.0",
+    "transformers>=4.35.0",
+    "torch>=2.0.0",
+    "FlagEmbedding>=1.2.10",
+    
+    # Cloud reranking fallback
+    "cohere>=4.40.0",
+    
+    # Document processing
+    "pypdf>=3.17.0",
+    "python-multipart>=0.0.6",
+    "aiofiles>=23.2.1",
+    "markdownify>=0.11.6",
+    "beautifulsoup4>=4.12.0",
+    
+    # Evaluation frameworks
+    "trulens-eval>=0.29.0",
+    "ragas>=0.2.0",
+    "datasets>=2.15.0",
+    
+    # Utilities
+    "pyyaml>=6.0.1",
+    "httpx>=0.25.0",
+    "rich>=13.7.0",
+    "typer>=0.9.0",
+    "loguru>=0.7.2",
+    "python-dotenv>=1.0.0",
+    
+    # Search and ranking
+    "rank-bm25>=0.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.11.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
+]
+
+[project.scripts]
+askme = "askme.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
