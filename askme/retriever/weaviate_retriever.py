@@ -101,6 +101,7 @@ class WeaviateRetriever(VectorRetriever):
                 self.client.collections.create(
                     name=self.class_name,
                     properties=[
+                        wcfg.Property(name="doc_id", data_type=wcfg.DataType.TEXT),
                         wcfg.Property(name="content", data_type=wcfg.DataType.TEXT),
                         wcfg.Property(name="title", data_type=wcfg.DataType.TEXT),
                     ],
@@ -157,7 +158,7 @@ class WeaviateRetriever(VectorRetriever):
                 limit=topk,
                 filters=where,
                 return_metadata=["score"],
-                return_properties=["content", "title"],
+                return_properties=["content", "title", "doc_id"],
             )
             out: List[RetrievalResult] = []
             for rank, o in enumerate(res.objects, 1):
@@ -211,7 +212,7 @@ class WeaviateRetriever(VectorRetriever):
                 limit=params.topk,
                 filters=where,
                 return_metadata=["score"],
-                return_properties=["content", "title"],
+                return_properties=["content", "title", "doc_id"],
             )
             out: List[RetrievalResult] = []
             for rank, o in enumerate(res.objects, 1):
@@ -271,6 +272,21 @@ class WeaviateRetriever(VectorRetriever):
     async def delete_document(self, doc_id: str) -> bool:
         col = await self._ensure_collection()
         try:
+            # Prefer deletion by original doc_id property (may not equal UUID)
+            try:
+                where = Filter.by_property("doc_id").equal(doc_id)
+                res = col.query.fetch_objects(filters=where, limit=10)
+                if res.objects:
+                    for o in res.objects:
+                        try:
+                            col.data.objects.delete_by_id(o.uuid)
+                        except Exception:
+                            pass
+                    return True
+            except Exception:
+                pass
+
+            # Fallback: attempt delete by assuming provided id is UUID
             col.data.objects.delete_by_id(doc_id)
             return True
         except Exception as e:
@@ -290,8 +306,15 @@ class WeaviateRetriever(VectorRetriever):
         col = await self._ensure_collection()
         try:
             info = col.config.get()
-            # Weaviate does not expose entity count here without aggregate query;
-            # return minimal config
+            total = None
+            try:
+                agg = col.aggregate.over_all(total_count=True)
+                total = getattr(agg, "total_count", None)
+                # Some versions may return dict-like
+                if total is None and isinstance(agg, dict):
+                    total = agg.get("total_count")
+            except Exception:
+                pass
             return {
                 "name": self.class_name,
                 "description": "Weaviate collection",
@@ -302,6 +325,7 @@ class WeaviateRetriever(VectorRetriever):
                         ).__name__
                     }
                 ],
+                "num_entities": int(total) if isinstance(total, (int, float)) else 0,
             }
         except Exception as e:
             logger.error(f"Weaviate get_collection_stats failed: {e}")

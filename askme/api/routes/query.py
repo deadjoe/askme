@@ -51,6 +51,8 @@ class RetrievalDebugInfo(BaseModel):
     overlap_hits: Optional[int] = Field(
         default=None, description="Overlap between dense-only and BM25-only topK"
     )
+    # Optional error when falling back to mock path
+    error: Optional[str] = Field(default=None, description="Fallback error detail")
 
 
 class QueryRequest(BaseModel):
@@ -170,6 +172,7 @@ async def query_documents(
             raise RuntimeError("Services not initialized")
 
         t0 = time.monotonic()
+        stage = "init"
         # 1) (Optional) enhancement
         query_list: List[str] = [req.q]
         if req.use_hyde:
@@ -191,12 +194,18 @@ async def query_documents(
             original_query=req.q,
         )
         result_lists = []
-        for q in query_list:
-            q_emb = await embedding_service.encode_query(q)
-            res = await retriever.hybrid_search(
-                q_emb["dense_embedding"], q_emb["sparse_embedding"], params
-            )
-            result_lists.append(res)
+        try:
+            stage = "embedding"
+            for q in query_list:
+                q_emb = await embedding_service.encode_query(q)
+                stage = "retrieval"
+                res = await retriever.hybrid_search(
+                    q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+                )
+                result_lists.append(res)
+        except Exception as _e:
+            # Raise with stage info for outer handler
+            raise RuntimeError(f"{stage} failed: {_e}")
         # Fuse multiple result lists (if any) with RRF; otherwise use single
         results = (
             SearchFusion.reciprocal_rank_fusion(result_lists, k=req.rrf_k)
@@ -208,9 +217,13 @@ async def query_documents(
         from askme.rerank.rerank_service import RerankingService
 
         rerank_svc = cast(RerankingService, reranking_service)
-        reranked = await rerank_svc.rerank(
-            req.q, results, top_n=req.max_passages, prefer_local=True
-        )
+        try:
+            stage = "rerank"
+            reranked = await rerank_svc.rerank(
+                req.q, results, top_n=req.max_passages, prefer_local=True
+            )
+        except Exception as _e:
+            raise RuntimeError(f"{stage} failed: {_e}")
         t3 = time.monotonic()
 
         # Build citations
@@ -244,7 +257,11 @@ async def query_documents(
                 f"Sources: {titles}."
             )
         else:
-            answer = await generator.generate(req.q, passages)
+            try:
+                stage = "generation"
+                answer = await generator.generate(req.q, passages)
+            except Exception as _e:
+                raise RuntimeError(f"{stage} failed: {_e}")
 
         debug_info = None
         if req.include_debug:
@@ -318,9 +335,9 @@ async def query_documents(
             timestamp=datetime.utcnow(),
             retrieval_debug=debug_info,
         )
-    except Exception:
-        # Fall through to mock response below
-        pass
+    except Exception as e:
+        # Fall through to mock response below; capture error detail for debug
+        fallback_error = str(e)
 
     # Mock response for now
     mock_citations = [
@@ -358,6 +375,7 @@ async def query_documents(
             embedding_latency_ms=150,
             search_latency_ms=800,
             rerank_latency_ms=300,
+            error=locals().get("fallback_error"),
         )
 
     # 若真实流程失败，仍尽量调用已配置的 generator 生成答案，便于本地快速联调（如 Ollama ）
@@ -443,7 +461,7 @@ async def retrieve_documents(
             )
             result_lists.append(res)
         results = (
-            SearchFusion.reciprocal_rank_fusion(result_lists, k=request.rrf_k)
+            SearchFusion.reciprocal_rank_fusion(result_lists, k=req.rrf_k)
             if len(result_lists) > 1
             else result_lists[0]
         )
@@ -469,10 +487,10 @@ async def retrieve_documents(
         try:
             q0_emb = await embedding_service.encode_query(req.q)
             dense_only = await retriever.dense_search(
-                q0_emb["dense_embedding"], topk=request.topk, filters=request.filters
+                q0_emb["dense_embedding"], topk=req.topk, filters=req.filters
             )
             sparse_only = await retriever.sparse_search(
-                q0_emb["sparse_embedding"], topk=request.topk, filters=request.filters
+                q0_emb["sparse_embedding"], topk=req.topk, filters=req.filters
             )
             if not sparse_only:
                 w_params_dense = HybridSearchParams(
@@ -512,9 +530,9 @@ async def retrieve_documents(
         debug_info = RetrievalDebugInfo(
             bm25_hits=bm25_hits,
             dense_hits=dense_hits,
-            fusion_method="rrf" if request.use_rrf else "alpha",
-            alpha=request.alpha,
-            rrf_k=request.rrf_k if request.use_rrf else None,
+            fusion_method="rrf" if req.use_rrf else "alpha",
+            alpha=req.alpha,
+            rrf_k=req.rrf_k if req.use_rrf else None,
             rerank_model="bge_local",
             latency_ms=int((t1 - t0) * 1000),
             embedding_latency_ms=0,
@@ -547,9 +565,9 @@ async def retrieve_documents(
     debug_info = RetrievalDebugInfo(
         bm25_hits=20,
         dense_hits=35,
-        fusion_method="rrf" if request.use_rrf else "alpha",
-        alpha=request.alpha,
-        rrf_k=request.rrf_k if request.use_rrf else None,
+        fusion_method="rrf" if req.use_rrf else "alpha",
+        alpha=req.alpha,
+        rrf_k=req.rrf_k if req.use_rrf else None,
         rerank_model="bge_local",
         latency_ms=900,
         embedding_latency_ms=120,

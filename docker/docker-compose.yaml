@@ -99,7 +99,8 @@ services:
     container_name: askme-weaviate
     profiles: ["weaviate"]  # Only start with --profile weaviate
     ports:
-      - "8081:8080"
+      - "8081:8080"   # HTTP
+      - "8082:50051"  # gRPC
     environment:
       - QUERY_DEFAULTS_LIMIT=25
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true

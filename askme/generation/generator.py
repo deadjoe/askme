@@ -15,7 +15,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import httpx
-from openai import OpenAI
+
+# OpenAI client is optional; make import safe for test environments
+try:  # pragma: no cover - import guard
+    from openai import OpenAI  # type: ignore
+except Exception:  # pragma: no cover
+    OpenAI = None  # type: ignore
 
 from askme.core.config import GenerationConfig
 
