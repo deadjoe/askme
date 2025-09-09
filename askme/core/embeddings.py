@@ -15,6 +15,14 @@ except Exception:  # pragma: no cover
 
 from askme.core.config import EmbeddingConfig
 
+# Optional symbol for tests to patch without importing heavy deps at module import time
+try:  # pragma: no cover - provide patch point for tests
+    from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel  # type: ignore
+
+    BGEM3FlagModel = _BGEM3FlagModel  # type: ignore
+except Exception:  # pragma: no cover
+    BGEM3FlagModel = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,10 +46,14 @@ class BGEEmbeddingService:
         try:
             logger.info(f"Loading BGE-M3 model: {self.config.model}")
 
-            # 延迟导入以避免在未安装依赖时阻塞应用其它功能
-            from FlagEmbedding import BGEM3FlagModel  # type: ignore
-
             # Load BGE-M3 model
+            global BGEM3FlagModel  # type: ignore
+            if BGEM3FlagModel is None:  # type: ignore
+                from FlagEmbedding import (
+                    BGEM3FlagModel as _BGEM3FlagModel,  # type: ignore
+                )
+
+                BGEM3FlagModel = _BGEM3FlagModel  # type: ignore
             self.model = BGEM3FlagModel(
                 self.config.model,
                 use_fp16=(self.device != "cpu" and self.config.use_fp16),
@@ -234,15 +246,25 @@ class BGEEmbeddingService:
                 return_colbert_vecs=False,
             )
 
-            dense_embedding = results["dense_vecs"][0]
-            sparse_embedding = results["sparse_vecs"][0]
+            dense_embedding = results.get("dense_vecs")[0]
+            # 兼容无 sparse_vecs 的形态（如仅返回 lexical_weights 或未返回稀疏向量）
+            if "sparse_vecs" in results and results["sparse_vecs"]:
+                sparse_embedding = results["sparse_vecs"][0]
+            else:
+                # 若仅有 lexical_weights，暂不转换索引，Weaviate 路径不使用该值
+                sparse_embedding = {}
 
             # Normalize dense embedding if configured
             if self.config.normalize_embeddings:
                 dense_embedding = dense_embedding / np.linalg.norm(dense_embedding)
 
             # Convert sparse embedding
-            sparse_dict = self._convert_sparse_embedding(sparse_embedding)
+            sparse_dict = (
+                self._convert_sparse_embedding(sparse_embedding)
+                if isinstance(sparse_embedding, (list, dict))
+                or hasattr(sparse_embedding, "indices")
+                else {}
+            )
 
             logger.debug(f"Encoded query: {query[:100]}...")
 

@@ -77,12 +77,27 @@ class BGEReranker(BaseReranker):
             # 延迟导入模型，以减少未安装依赖时的导入错误
             from FlagEmbedding import FlagReranker  # type: ignore
 
-            # Load BGE reranker model
-            self.model = FlagReranker(
-                self.config.local_model,
-                use_fp16=(self.device != "cpu"),  # CPU 上禁用 FP16 更稳妥
-                device=self.device,
-            )
+            # Load BGE reranker model；若遇到 trust_remote_code 提示，回退到基础模型
+            try:
+                self.model = FlagReranker(
+                    self.config.local_model,
+                    use_fp16=(self.device != "cpu"),
+                    device=self.device,
+                )
+            except Exception as e:
+                msg = str(e)
+                if "trust_remote_code" in msg or "allow custom code" in msg:
+                    fallback = "BAAI/bge-reranker-base"
+                    logger.warning(
+                        f"Local reranker requires trust_remote_code, falling back to {fallback}"
+                    )
+                    self.model = FlagReranker(
+                        fallback,
+                        use_fp16=(self.device != "cpu"),
+                        device=self.device,
+                    )
+                else:
+                    raise
 
             self._is_initialized = True
             logger.info(f"BGE reranker loaded on device: {self.device}")
