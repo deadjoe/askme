@@ -176,6 +176,8 @@ secrets.env
 results/
 reports/
 benchmarks/
+data/eval_runs/*
+!data/eval_runs/.gitkeep
 
 # Backup files
 *.bak
