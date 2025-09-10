@@ -435,9 +435,7 @@ class EmbeddingManager:
             results[idx] = emb
 
         # Type ignore: we ensure all filled above
-        valid_results: List[Dict[str, Any]] = [
-            r for r in results if r is not None
-        ]
+        valid_results: List[Dict[str, Any]] = [r for r in results if r is not None]
         return valid_results
 
     async def get_query_embedding(
