@@ -1,5 +1,5 @@
 """
-Unit tests for document processing pipeline.
+Unit tests for document processing pipeline - Fixed version.
 """
 
 import tempfile
@@ -171,7 +171,7 @@ class TestPDFProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_pdf_mock(self):
+    async def test_process_pdf_mock(self) -> None:
         """Test PDF processing with mocked pypdf."""
         processor = PDFProcessor()
 
@@ -214,7 +214,7 @@ class TestMarkdownProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_markdown_with_title(self):
+    async def test_process_markdown_with_title(self) -> None:
         """Test Markdown processing with title extraction."""
         processor = MarkdownProcessor()
 
@@ -222,12 +222,14 @@ class TestMarkdownProcessor:
             "# Main Title\n\nThis is markdown content.\n\n## Section\n\nMore content."
         )
 
-        mock_file = AsyncMock()
+        # Create a proper async context manager mock
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
-        with patch(
-            "askme.ingest.document_processor.aiofiles.open", return_value=mock_file
-        ):
+        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -239,7 +241,7 @@ class TestMarkdownProcessor:
                 assert result.metadata["encoding"] == "utf-8"
 
     @pytest.mark.asyncio
-    async def test_process_markdown_without_title(self):
+    async def test_process_markdown_without_title(self) -> None:
         """Test Markdown processing without H1 title."""
         processor = MarkdownProcessor()
 
@@ -247,12 +249,13 @@ class TestMarkdownProcessor:
             "This is markdown content without a title.\n\n## Section\n\nMore content."
         )
 
-        mock_file = AsyncMock()
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
-        with patch(
-            "askme.ingest.document_processor.aiofiles.open", return_value=mock_file
-        ):
+        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -273,7 +276,7 @@ class TestHTMLProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_html_with_title(self):
+    async def test_process_html_with_title(self) -> None:
         """Test HTML processing with title extraction."""
         processor = HTMLProcessor()
 
@@ -291,12 +294,13 @@ class TestHTMLProcessor:
         </html>
         """
 
-        mock_file = AsyncMock()
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=html_content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
-        with patch(
-            "askme.ingest.document_processor.aiofiles.open", return_value=mock_file
-        ):
+        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(html_content)
 
@@ -327,18 +331,19 @@ class TestTextProcessor:
             assert processor.can_process(Path("test.log")) is False
 
     @pytest.mark.asyncio
-    async def test_process_text_utf8(self):
+    async def test_process_text_utf8(self) -> None:
         """Test text processing with UTF-8 encoding."""
         processor = TextProcessor()
 
         content = "This is plain text content.\nWith multiple lines.\nAnd unicode: café"
 
-        mock_file = AsyncMock()
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
-        with patch(
-            "askme.ingest.document_processor.aiofiles.open", return_value=mock_file
-        ):
+        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -350,26 +355,29 @@ class TestTextProcessor:
                 assert result.metadata["encoding"] == "utf-8"
 
     @pytest.mark.asyncio
-    async def test_process_text_encoding_fallback(self):
+    async def test_process_text_encoding_fallback(self) -> None:
         """Test text processing with encoding fallback."""
         processor = TextProcessor()
 
         content = "This is plain text content."
 
-        # Simulate UTF-8 encoding error, fallback to latin-1
         def mock_open_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
-            mock_file = AsyncMock()
+            mock_file = MagicMock()
+            async_context_manager = AsyncMock()
+            
             if kwargs.get("encoding") == "utf-8":
                 mock_file.read = AsyncMock(
                     side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "error")
                 )
             else:
                 mock_file.read = AsyncMock(return_value=content)
-            return mock_file
+                
+            async_context_manager.__aenter__.return_value = mock_file
+            return async_context_manager
 
         with patch(
             "askme.ingest.document_processor.aiofiles.open",
-            side_effect=mock_open_side_effect,
+            side_effect=mock_open_side_effect
         ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
@@ -394,18 +402,19 @@ class TestDocumentProcessingPipeline:
         assert pipeline.get_processor(Path("test.unknown")) is None
 
     @pytest.mark.asyncio
-    async def test_process_file_with_metadata(self):
+    async def test_process_file_with_metadata(self) -> None:
         """Test file processing with custom metadata and tags."""
         pipeline = DocumentProcessingPipeline()
 
-        # Mock a simple text file
-        content = "This is test content for processing."
-        mock_file = AsyncMock()
+        # Mock a longer text file that will meet min_chunk_size requirements
+        content = "This is test content for processing. " * 20  # Make it long enough to chunk
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
-        with patch(
-            "askme.ingest.document_processor.aiofiles.open", return_value=mock_file
-        ):
+        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
             with patch.object(Path, "exists", return_value=True):
                 with patch.object(Path, "stat") as mock_stat:
                     mock_stat.return_value.st_size = len(content)
@@ -426,7 +435,7 @@ class TestDocumentProcessingPipeline:
                     assert first_doc.metadata["source_type"] == "text"
 
     @pytest.mark.asyncio
-    async def test_process_file_not_found(self):
+    async def test_process_file_not_found(self) -> None:
         """Test processing non-existent file."""
         pipeline = DocumentProcessingPipeline()
 
@@ -435,7 +444,7 @@ class TestDocumentProcessingPipeline:
                 await pipeline.process_file("nonexistent.txt")
 
     @pytest.mark.asyncio
-    async def test_process_file_unsupported_type(self):
+    async def test_process_file_unsupported_type(self) -> None:
         """Test processing unsupported file type."""
         pipeline = DocumentProcessingPipeline()
 
@@ -444,16 +453,20 @@ class TestDocumentProcessingPipeline:
                 await pipeline.process_file("test.unknown")
 
     @pytest.mark.asyncio
-    async def test_process_directory_recursive(self):
+    async def test_process_directory_recursive(self) -> None:
         """Test directory processing with recursive search."""
         pipeline = DocumentProcessingPipeline()
 
         # Mock directory structure
         test_files = [Path("dir/file1.txt"), Path("dir/subdir/file2.md")]
 
-        content = "Test content"
-        mock_file = AsyncMock()
+        # Make content long enough to meet min_chunk_size requirements  
+        content = "Test content for directory processing. " * 25
+        mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
+        
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_file
 
         with patch.object(Path, "exists", return_value=True):
             with patch.object(Path, "is_dir", return_value=True):
@@ -472,10 +485,7 @@ class TestDocumentProcessingPipeline:
 
                         mock_rglob.side_effect = rglob_side_effect
 
-                        with patch(
-                            "askme.ingest.document_processor.aiofiles.open",
-                            return_value=mock_file,
-                        ):
+                        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
                             with patch.object(Path, "relative_to") as mock_relative:
                                 mock_relative.return_value = Path("relative_path")
 
@@ -496,7 +506,7 @@ class TestDocumentProcessingPipeline:
                                     assert doc.metadata["tags"] == ["batch"]
 
     @pytest.mark.asyncio
-    async def test_process_directory_invalid_path(self):
+    async def test_process_directory_invalid_path(self) -> None:
         """Test processing invalid directory path."""
         pipeline = DocumentProcessingPipeline()
 
