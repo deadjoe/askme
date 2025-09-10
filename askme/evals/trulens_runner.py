@@ -8,8 +8,8 @@ compatible providers are not available/configured.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
 import os
+from typing import Any, Dict, List, Optional
 
 
 def run_trulens(
@@ -30,12 +30,13 @@ def run_trulens(
     # RAG pipeline with TruLens App and record traces. Here we leverage
     # text-level feedback providers to approximate triad scores on the samples.
     try:
-        # Provider selection: currently only OpenAI placeholder if API is present.
-        # Users running locally without OpenAI will likely hit the exception
-        # and should skip TruLens in favor of Ragas.
-        base_url = os.getenv("OPENAI_BASE_URL", "")
-        if base_url:
-            os.environ["OPENAI_API_BASE"] = base_url
+        # Provider selection: use OpenAI-compatible endpoint (Ollama) if configured.
+        base_url = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+        os.environ["OPENAI_API_BASE"] = base_url
+        # Ensure an API key is present (Ollama ignores value but SDK requires it)
+        os.environ.setdefault(
+            "OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "ollama-local")
+        )
         provider_client = OpenAI()
 
         grounded = Groundedness(groundedness_provider=provider_client)

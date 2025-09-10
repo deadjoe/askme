@@ -10,6 +10,12 @@ SUITE="baseline"
 METRICS=""
 DATASET_PATH=""
 SAMPLE_SIZE=""
+# Config overrides (for parameter sweeps)
+OVERRIDES_JSON=""
+# Convenience knobs for common overrides
+OVR_ALPHA=""
+OVR_TOPK=""
+OVR_TOPN=""
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 OUTPUT_FORMAT="text"
 WAIT_FOR_COMPLETION=true
@@ -35,6 +41,10 @@ OPTIONS:
     --dataset=PATH       Custom dataset path (overrides suite default)
     --sample-size=N      Number of samples to evaluate (default: all)
     --format=FORMAT      Output format: text, json, table (default: text)
+    --alpha=X            Override hybrid.alpha (0..1)
+    --topk=N             Override hybrid.topk (1..100)
+    --topn=N             Override rerank.top_n (1..20)
+    --overrides-json=JS  Raw JSON for config_overrides (takes precedence)
     --no-wait           Don't wait for completion, just start evaluation
     --api-url=URL       API base URL (default: http://localhost:8080)
     --verbose           Enable verbose output
@@ -49,9 +59,9 @@ AVAILABLE SUITES:
 AVAILABLE METRICS:
     TruLens metrics:
         context_relevance    How relevant retrieved context is to query
-        groundedness        How well answer is supported by context  
+        groundedness        How well answer is supported by context
         answer_relevance    How relevant answer is to query
-    
+
     Ragas metrics:
         faithfulness        Factual consistency of answer with context
         answer_relevancy    Relevance of answer to query
@@ -61,13 +71,13 @@ AVAILABLE METRICS:
 EXAMPLES:
     # Run full baseline evaluation
     $0 --suite=baseline
-    
+
     # Quick evaluation with specific metrics
     $0 --suite=quick --metrics="faithfulness,context_relevance"
-    
+
     # Custom dataset evaluation
     $0 --dataset="/path/to/qa_dataset.jsonl" --sample-size=100
-    
+
     # Regression testing
     $0 --suite=regression --format=json --no-wait
 
@@ -83,7 +93,7 @@ log() {
     shift
     local message="$*"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case $level in
         INFO)
             echo -e "${BLUE}[INFO]${NC} ${timestamp} - ${message}" >&2
@@ -110,25 +120,25 @@ validate_parameters() {
             exit 1
             ;;
     esac
-    
+
     # Check custom dataset requirement
     if [[ "$SUITE" == "custom" && -z "$DATASET_PATH" ]]; then
         log ERROR "Custom suite requires --dataset parameter"
         exit 1
     fi
-    
+
     # Validate dataset path if provided
     if [[ -n "$DATASET_PATH" && ! -f "$DATASET_PATH" ]]; then
         log ERROR "Dataset file not found: $DATASET_PATH"
         exit 1
     fi
-    
+
     # Validate sample size
     if [[ -n "$SAMPLE_SIZE" && ! "$SAMPLE_SIZE" =~ ^[0-9]+$ ]]; then
         log ERROR "Sample size must be a positive integer: $SAMPLE_SIZE"
         exit 1
     fi
-    
+
     # Validate metrics
     if [[ -n "$METRICS" ]]; then
         local available_metrics="context_relevance,groundedness,answer_relevance,faithfulness,answer_relevancy,context_precision,context_recall"
@@ -141,7 +151,7 @@ validate_parameters() {
             fi
         done
     fi
-    
+
     # Validate output format
     if [[ "$OUTPUT_FORMAT" != "json" && "$OUTPUT_FORMAT" != "text" && "$OUTPUT_FORMAT" != "table" ]]; then
         log ERROR "Invalid output format: $OUTPUT_FORMAT. Must be 'json', 'text', or 'table'"
@@ -149,37 +159,76 @@ validate_parameters() {
     fi
 }
 
+_merge_overrides_json() {
+    # Compose overrides from convenience flags if raw JSON not provided
+    if [[ -n "$OVERRIDES_JSON" ]]; then
+        echo "$OVERRIDES_JSON"
+        return
+    fi
+
+    local parts=()
+    if [[ -n "$OVR_ALPHA" ]]; then
+        parts+=( "\"hybrid\":{\"alpha\":$OVR_ALPHA}" )
+    fi
+    if [[ -n "$OVR_TOPK" ]]; then
+        parts+=( "\"hybrid\":{\"topk\":$OVR_TOPK}" )
+    fi
+    if [[ -n "$OVR_TOPN" ]]; then
+        parts+=( "\"rerank\":{\"top_n\":$OVR_TOPN}" )
+    fi
+
+    if [[ ${#parts[@]} -eq 0 ]]; then
+        echo "null"
+        return
+    fi
+
+    # Merge shallowly: duplicate keys last one wins (hybrid may appear twice)
+    local json="{"
+    for i in "${!parts[@]}"; do
+        json+="${parts[$i]}"
+        if [[ $i -lt $(( ${#parts[@]} - 1 )) ]]; then
+            json+=",";
+        fi
+    done
+    json+="}"
+    echo "$json"
+}
+
 create_evaluation_request() {
     local metrics_json="null"
-    
+
     if [[ -n "$METRICS" ]]; then
         # Convert comma-separated metrics to JSON array
         metrics_json=$(echo "$METRICS" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
     fi
-    
+
     local sample_size_json="null"
     if [[ -n "$SAMPLE_SIZE" ]]; then
         sample_size_json="$SAMPLE_SIZE"
     fi
-    
+
     local dataset_path_json="null"
     if [[ -n "$DATASET_PATH" ]]; then
         dataset_path_json="\"$DATASET_PATH\""
     fi
-    
+
+    local overrides_json
+    overrides_json=$(_merge_overrides_json)
+
     cat << EOF
 {
     "suite": "$SUITE",
     "metrics": $metrics_json,
     "dataset_path": $dataset_path_json,
-    "sample_size": $sample_size_json
+    "sample_size": $sample_size_json,
+    "config_overrides": $overrides_json
 }
 EOF
 }
 
 submit_evaluation_request() {
     local request_body="$1"
-    
+
     local curl_args=(
         -s
         -X POST
@@ -187,24 +236,24 @@ submit_evaluation_request() {
         -d "$request_body"
         "${API_BASE_URL}/eval/run"
     )
-    
+
     # Add API key if available
     if [[ -n "${ASKME_API_KEY:-}" ]]; then
         curl_args+=(-H "X-API-Key: $ASKME_API_KEY")
     fi
-    
+
     if $VERBOSE; then
         log INFO "Submitting evaluation request..."
         echo "Request body:" >&2
         echo "$request_body" | jq . >&2
     fi
-    
+
     local response
     if ! response=$(curl "${curl_args[@]}"); then
         log ERROR "Failed to submit evaluation request"
         exit 1
     fi
-    
+
     # Check for API errors
     local error_message
     error_message=$(echo "$response" | jq -r '.detail // empty' 2>/dev/null || echo "")
@@ -212,30 +261,30 @@ submit_evaluation_request() {
         log ERROR "API Error: $error_message"
         exit 1
     fi
-    
+
     echo "$response"
 }
 
 get_evaluation_results() {
     local run_id="$1"
-    
+
     local curl_args=(
         -s
         -X GET
         "${API_BASE_URL}/eval/runs/${run_id}"
     )
-    
+
     # Add API key if available
     if [[ -n "${ASKME_API_KEY:-}" ]]; then
         curl_args+=(-H "X-API-Key: $ASKME_API_KEY")
     fi
-    
+
     local response
     if ! response=$(curl "${curl_args[@]}"); then
         log ERROR "Failed to get evaluation results"
         exit 1
     fi
-    
+
     echo "$response"
 }
 
@@ -244,16 +293,16 @@ poll_evaluation_status() {
     local timeout=${2:-1800}  # 30 minutes default timeout
     local interval=10
     local elapsed=0
-    
+
     log INFO "Polling evaluation status for run: $run_id"
-    
+
     while [[ $elapsed -lt $timeout ]]; do
         local response
         response=$(get_evaluation_results "$run_id")
-        
+
         local status
         status=$(echo "$response" | jq -r '.status // "unknown"')
-        
+
         case $status in
             "completed")
                 log SUCCESS "Evaluation completed successfully!"
@@ -280,11 +329,11 @@ poll_evaluation_status() {
                 log WARN "Unknown status: $status"
                 ;;
         esac
-        
+
         sleep $interval
         elapsed=$((elapsed + interval))
     done
-    
+
     log ERROR "Timeout waiting for evaluation to complete"
     return 1
 }
@@ -292,7 +341,7 @@ poll_evaluation_status() {
 format_output() {
     local response="$1"
     local format="$2"
-    
+
     case $format in
         "json")
             echo "$response" | jq .
@@ -308,7 +357,7 @@ format_output() {
 
 format_text_output() {
     local response="$1"
-    
+
     # Extract basic info
     local run_id suite status started_at completed_at total_samples processed_samples
     run_id=$(echo "$response" | jq -r '.run_id // "N/A"')
@@ -318,7 +367,7 @@ format_text_output() {
     completed_at=$(echo "$response" | jq -r '.completed_at // "N/A"')
     total_samples=$(echo "$response" | jq -r '.total_samples // 0')
     processed_samples=$(echo "$response" | jq -r '.processed_samples // 0')
-    
+
     echo "Evaluation Results"
     echo "=================="
     echo "Run ID: $run_id"
@@ -328,15 +377,15 @@ format_text_output() {
     echo "Completed: $completed_at"
     echo "Samples: $processed_samples/$total_samples"
     echo
-    
+
     # Display overall metrics
     local metrics
     metrics=$(echo "$response" | jq -c '.overall_metrics[]? // empty')
-    
+
     if [[ -n "$metrics" ]]; then
         echo "Overall Metrics:"
         echo "================"
-        
+
         while IFS= read -r metric; do
             if [[ -n "$metric" ]]; then
                 local name value threshold passed
@@ -344,12 +393,12 @@ format_text_output() {
                 value=$(echo "$metric" | jq -r '.value // 0')
                 threshold=$(echo "$metric" | jq -r '.threshold // null')
                 passed=$(echo "$metric" | jq -r '.passed // false')
-                
+
                 local status_icon="❌"
                 if [[ "$passed" == "true" ]]; then
                     status_icon="✅"
                 fi
-                
+
                 printf "%-20s: %.4f" "$name" "$value"
                 if [[ "$threshold" != "null" ]]; then
                     printf " (threshold: %.2f) %s" "$threshold" "$status_icon"
@@ -359,7 +408,7 @@ format_text_output() {
         done <<< "$metrics"
         echo
     fi
-    
+
     # Display summary statistics
     local summary
     summary=$(echo "$response" | jq '.summary // empty')
@@ -373,31 +422,31 @@ format_text_output() {
 
 format_table_output() {
     local response="$1"
-    
+
     # Use column command for table formatting if available
     if ! command -v column &> /dev/null; then
         log WARN "column command not available, falling back to text format"
         format_text_output "$response"
         return
     fi
-    
+
     # Extract basic info for header
     local run_id suite status
     run_id=$(echo "$response" | jq -r '.run_id // "N/A"')
     suite=$(echo "$response" | jq -r '.suite // "N/A"')
     status=$(echo "$response" | jq -r '.status // "N/A"')
-    
+
     echo "Evaluation Results - Run ID: $run_id, Suite: $suite, Status: $status"
     echo
-    
+
     # Create metrics table
     echo "Overall Metrics:"
     printf "%-20s %-10s %-12s %-8s\n" "Metric" "Value" "Threshold" "Status"
     printf "%-20s %-10s %-12s %-8s\n" "--------------------" "----------" "------------" "--------"
-    
+
     local metrics
     metrics=$(echo "$response" | jq -c '.overall_metrics[]? // empty')
-    
+
     while IFS= read -r metric; do
         if [[ -n "$metric" ]]; then
             local name value threshold passed
@@ -405,17 +454,17 @@ format_table_output() {
             value=$(echo "$metric" | jq -r '.value // 0')
             threshold=$(echo "$metric" | jq -r '.threshold // null')
             passed=$(echo "$metric" | jq -r '.passed // false')
-            
+
             local status_text="FAIL"
             if [[ "$passed" == "true" ]]; then
                 status_text="PASS"
             fi
-            
+
             local threshold_text="N/A"
             if [[ "$threshold" != "null" ]]; then
                 threshold_text=$(printf "%.3f" "$threshold")
             fi
-            
+
             printf "%-20s %-10.4f %-12s %-8s\n" "$name" "$value" "$threshold_text" "$status_text"
         fi
     done <<< "$metrics"
@@ -428,18 +477,18 @@ list_available_metrics() {
         -X GET
         "${API_BASE_URL}/eval/metrics"
     )
-    
+
     # Add API key if available
     if [[ -n "${ASKME_API_KEY:-}" ]]; then
         curl_args+=(-H "X-API-Key: $ASKME_API_KEY")
     fi
-    
+
     local response
     if ! response=$(curl "${curl_args[@]}"); then
         log ERROR "Failed to get available metrics"
         return 1
     fi
-    
+
     echo "Available Evaluation Metrics:"
     echo "============================="
     echo
@@ -456,12 +505,12 @@ main() {
         log ERROR "curl is required but not installed"
         exit 1
     fi
-    
+
     if ! command -v jq &> /dev/null; then
         log ERROR "jq is required but not installed"
         exit 1
     fi
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -487,6 +536,22 @@ main() {
                 ;;
             --format=*)
                 OUTPUT_FORMAT="${1#*=}"
+                shift
+                ;;
+            --alpha=*)
+                OVR_ALPHA="${1#*=}"
+                shift
+                ;;
+            --topk=*)
+                OVR_TOPK="${1#*=}"
+                shift
+                ;;
+            --topn=*)
+                OVR_TOPN="${1#*=}"
+                shift
+                ;;
+            --overrides-json=*)
+                OVERRIDES_JSON="${1#*=}"
                 shift
                 ;;
             --no-wait)
@@ -517,37 +582,37 @@ main() {
                 ;;
         esac
     done
-    
+
     # Validate parameters
     validate_parameters
-    
+
     if $VERBOSE; then
         log INFO "Starting evaluation with suite: $SUITE"
         [[ -n "$METRICS" ]] && log INFO "Metrics: $METRICS"
         [[ -n "$SAMPLE_SIZE" ]] && log INFO "Sample size: $SAMPLE_SIZE"
         [[ -n "$DATASET_PATH" ]] && log INFO "Dataset: $DATASET_PATH"
     fi
-    
+
     # Create and submit request
     local request_body
     request_body=$(create_evaluation_request)
-    
+
     local response
     response=$(submit_evaluation_request "$request_body")
-    
+
     # Extract run ID
     local run_id
     run_id=$(echo "$response" | jq -r '.run_id // empty')
-    
+
     if [[ -z "$run_id" ]]; then
         log ERROR "No run ID received from server"
         echo "Response:" >&2
         echo "$response" | jq . >&2
         exit 1
     fi
-    
+
     log INFO "Evaluation started with run ID: $run_id"
-    
+
     if $WAIT_FOR_COMPLETION; then
         # Poll for completion and display results
         local final_response

@@ -10,13 +10,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # 可选依赖：按需延迟导入，避免在未安装环境下阻塞其它功能
 try:
-    import numpy as _np  # type: ignore
+    import numpy as _np
 except Exception:  # pragma: no cover
-    _np = None  # type: ignore
+    _np = None
 try:
-    import torch as _torch  # type: ignore
+    import torch as _torch
 except Exception:  # pragma: no cover
-    _torch = None  # type: ignore
+    _torch = None
 
 from askme.core.config import RerankConfig
 from askme.retriever.base import Document, RetrievalResult
@@ -75,7 +75,7 @@ class BGEReranker(BaseReranker):
             logger.info(f"Loading BGE reranker: {self.config.local_model}")
 
             # 延迟导入模型，以减少未安装依赖时的导入错误
-            from FlagEmbedding import FlagReranker  # type: ignore
+            from FlagEmbedding import FlagReranker
 
             # Load BGE reranker model；若遇到 trust_remote_code 提示，回退到基础模型
             try:
@@ -122,7 +122,15 @@ class BGEReranker(BaseReranker):
             original_docs: List[RetrievalResult] = []
 
             for doc_result in documents:
-                pairs.append([query, doc_result.document.content])
+                # 轻量长度控制：用字符近似模型的 token 上限，避免超长文本影响速度与稳定性
+                content = doc_result.document.content
+                try:
+                    char_limit = max(512, int(self.config.local_max_length) * 4)
+                except Exception:
+                    char_limit = 2048
+                if len(content) > char_limit:
+                    content = content[:char_limit]
+                pairs.append([query, content])
                 original_docs.append(doc_result)
 
             # Get reranking scores in batches
@@ -138,7 +146,7 @@ class BGEReranker(BaseReranker):
 
                 # Get scores for this batch
                 assert self.model is not None
-                batch_scores = self.model.compute_score(batch_pairs)  # type: ignore[attr-defined]
+                batch_scores = self.model.compute_score(batch_pairs)
 
                 # Handle single score vs list of scores
                 if isinstance(batch_scores, (int, float)):
@@ -232,7 +240,7 @@ class CohereReranker(BaseReranker):
 
         if api_key:
             # 延迟导入 cohere SDK
-            import cohere  # type: ignore
+            import cohere
 
             self.client = cohere.Client(api_key)
 

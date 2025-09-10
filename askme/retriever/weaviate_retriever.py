@@ -98,6 +98,7 @@ class WeaviateRetriever(VectorRetriever):
                 for c in existing_raw
             ]
             if self.class_name not in existing:
+                # 显式配置向量索引（HNSW + 选定距离度量），避免依赖服务端默认
                 self.client.collections.create(
                     name=self.class_name,
                     properties=[
@@ -106,6 +107,9 @@ class WeaviateRetriever(VectorRetriever):
                         wcfg.Property(name="title", data_type=wcfg.DataType.TEXT),
                     ],
                     vectorizer_config=wcfg.Configure.Vectorizer.none(),
+                    vector_index_config=wcfg.Configure.VectorIndex.hnsw(
+                        distance=metric_enum
+                    ),
                 )
                 logger.info(f"Created Weaviate collection: {self.class_name}")
 

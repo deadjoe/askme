@@ -7,14 +7,14 @@ set -euo pipefail
 
 # Default values
 QUERY=""
-TOPK=50
-ALPHA=0.5
+TOPK=30
+ALPHA=0.0
 USE_RRF=true
 RRF_K=60
 USE_HYDE=false
 USE_RAG_FUSION=false
 RERANKER="bge_local"
-MAX_PASSAGES=8
+MAX_PASSAGES=5
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 OUTPUT_FORMAT="json"
 INCLUDE_DEBUG=false
@@ -56,13 +56,13 @@ OPTIONS:
 EXAMPLES:
     # Basic hybrid search
     $0 "What is machine learning?" --alpha=0.5
-    
+
     # Sparse-focused search with RRF
     $0 "neural networks deep learning" --alpha=0.2 --rrf --rrf-k=60
-    
+
     # Dense search with query enhancement
     $0 "explain transformers" --alpha=0.8 --hyde --rag-fusion
-    
+
     # Use Cohere reranker
     $0 "best practices for RAG" --reranker=cohere --debug
 
@@ -78,7 +78,7 @@ log() {
     shift
     local message="$*"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case $level in
         INFO)
             echo -e "${BLUE}[INFO]${NC} ${timestamp} - ${message}" >&2
@@ -101,25 +101,25 @@ validate_parameters() {
         log ERROR "Alpha must be between 0 and 1, got: $ALPHA"
         exit 1
     fi
-    
+
     # Validate topk
     if [[ $TOPK -lt 1 || $TOPK -gt 100 ]]; then
         log ERROR "topk must be between 1 and 100, got: $TOPK"
         exit 1
     fi
-    
+
     # Validate max_passages
     if [[ $MAX_PASSAGES -lt 1 || $MAX_PASSAGES -gt 20 ]]; then
         log ERROR "max-passages must be between 1 and 20, got: $MAX_PASSAGES"
         exit 1
     fi
-    
+
     # Validate reranker
     if [[ "$RERANKER" != "bge_local" && "$RERANKER" != "cohere" ]]; then
         log ERROR "Invalid reranker: $RERANKER. Must be 'bge_local' or 'cohere'"
         exit 1
     fi
-    
+
     # Validate output format
     if [[ "$OUTPUT_FORMAT" != "json" && "$OUTPUT_FORMAT" != "text" && "$OUTPUT_FORMAT" != "table" ]]; then
         log ERROR "Invalid output format: $OUTPUT_FORMAT. Must be 'json', 'text', or 'table'"
@@ -147,7 +147,7 @@ EOF
 submit_retrieval_request() {
     local request_body="$1"
     local endpoint="${2:-retrieve}"
-    
+
     local curl_args=(
         -s
         -X POST
@@ -155,24 +155,24 @@ submit_retrieval_request() {
         -d "$request_body"
         "${API_BASE_URL}/query/${endpoint}"
     )
-    
+
     # Add API key if available
     if [[ -n "${ASKME_API_KEY:-}" ]]; then
         curl_args+=(-H "X-API-Key: $ASKME_API_KEY")
     fi
-    
+
     if $VERBOSE; then
         log INFO "Submitting retrieval request to /${endpoint}..."
         echo "Request body:" >&2
         echo "$request_body" | jq . >&2
     fi
-    
+
     local response
     if ! response=$(curl "${curl_args[@]}"); then
         log ERROR "Failed to submit retrieval request"
         exit 1
     fi
-    
+
     # Check for API errors
     local error_message
     error_message=$(echo "$response" | jq -r '.detail // empty' 2>/dev/null || echo "")
@@ -180,14 +180,14 @@ submit_retrieval_request() {
         log ERROR "API Error: $error_message"
         exit 1
     fi
-    
+
     echo "$response"
 }
 
 format_output() {
     local response="$1"
     local format="$2"
-    
+
     case $format in
         "json")
             echo "$response" | jq .
@@ -203,22 +203,22 @@ format_output() {
 
 format_text_output() {
     local response="$1"
-    
+
     # Extract basic info
     local query_id
     query_id=$(echo "$response" | jq -r '.query_id // "N/A"')
     local timestamp
     timestamp=$(echo "$response" | jq -r '.timestamp // "N/A"')
-    
+
     echo "Query ID: $query_id"
     echo "Timestamp: $timestamp"
     echo "Query: \"$QUERY\""
     echo
-    
+
     # Check if this is a full query response or retrieval-only
     local has_answer
     has_answer=$(echo "$response" | jq 'has("answer")')
-    
+
     if [[ "$has_answer" == "true" ]]; then
         # Full query response with generated answer
         local answer
@@ -228,18 +228,18 @@ format_text_output() {
         echo "$answer"
         echo
     fi
-    
+
     # Display retrieved documents/citations
     echo "Retrieved Documents:"
     echo "==================="
-    
+
     local documents
     if [[ "$has_answer" == "true" ]]; then
         documents=$(echo "$response" | jq -c '.citations[]? // empty')
     else
         documents=$(echo "$response" | jq -c '.documents[]? // empty')
     fi
-    
+
     local count=1
     while IFS= read -r doc; do
         if [[ -n "$doc" ]]; then
@@ -248,7 +248,7 @@ format_text_output() {
             title=$(echo "$doc" | jq -r '.title // "Untitled"')
             content=$(echo "$doc" | jq -r '.content // "No content"')
             score=$(echo "$doc" | jq -r '.score // 0')
-            
+
             echo "[$count] Doc ID: $doc_id"
             echo "    Title: $title"
             echo "    Score: $score"
@@ -257,7 +257,7 @@ format_text_output() {
             ((count++))
         fi
     done <<< "$documents"
-    
+
     # Display debug info if available
     if $INCLUDE_DEBUG; then
         local debug_info
@@ -272,32 +272,32 @@ format_text_output() {
 
 format_table_output() {
     local response="$1"
-    
+
     # Use column command for table formatting if available
     if ! command -v column &> /dev/null; then
         log WARN "column command not available, falling back to text format"
         format_text_output "$response"
         return
     fi
-    
+
     echo "Query: \"$QUERY\""
     echo
-    
+
     # Create table header
     printf "%-3s %-15s %-30s %-8s %-50s\n" "Idx" "Doc ID" "Title" "Score" "Content Preview"
     printf "%-3s %-15s %-30s %-8s %-50s\n" "---" "---------------" "------------------------------" "--------" "--------------------------------------------------"
-    
+
     # Display documents in table format
     local documents
     local has_answer
     has_answer=$(echo "$response" | jq 'has("answer")')
-    
+
     if [[ "$has_answer" == "true" ]]; then
         documents=$(echo "$response" | jq -c '.citations[]? // empty')
     else
         documents=$(echo "$response" | jq -c '.documents[]? // empty')
     fi
-    
+
     local count=1
     while IFS= read -r doc; do
         if [[ -n "$doc" ]]; then
@@ -306,12 +306,12 @@ format_table_output() {
             title=$(echo "$doc" | jq -r '.title // "Untitled"')
             content=$(echo "$doc" | jq -r '.content // ""')
             score=$(echo "$doc" | jq -r '.score // 0')
-            
+
             # Truncate for table display
             doc_id=$(echo "$doc_id" | cut -c1-13)
             title=$(echo "$title" | cut -c1-28)
             content=$(echo "$content" | tr '\n' ' ' | cut -c1-48)
-            
+
             printf "%-3d %-15s %-30s %-8.3f %-50s\n" "$count" "$doc_id" "$title" "$score" "$content"
             ((count++))
         fi
@@ -324,17 +324,17 @@ main() {
         log ERROR "curl is required but not installed"
         exit 1
     fi
-    
+
     if ! command -v jq &> /dev/null; then
         log ERROR "jq is required but not installed"
         exit 1
     fi
-    
+
     if ! command -v bc &> /dev/null; then
         log ERROR "bc is required but not installed"
         exit 1
     fi
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -410,29 +410,29 @@ main() {
                 ;;
         esac
     done
-    
+
     # Validate required arguments
     if [[ -z "$QUERY" ]]; then
         log ERROR "Query is required"
         usage
         exit 1
     fi
-    
+
     # Validate parameters
     validate_parameters
-    
+
     if $VERBOSE; then
         log INFO "Starting retrieval for query: \"$QUERY\""
         log INFO "Parameters: topk=$TOPK, alpha=$ALPHA, rrf=$USE_RRF, reranker=$RERANKER"
     fi
-    
+
     # Create and submit request
     local request_body
     request_body=$(create_retrieval_request)
-    
+
     local response
     response=$(submit_retrieval_request "$request_body" "retrieve")
-    
+
     # Format and display output
     format_output "$response" "$OUTPUT_FORMAT"
 }

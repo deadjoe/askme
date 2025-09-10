@@ -9,19 +9,19 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 try:
-    import torch  # type: ignore
+    import torch
 except Exception:  # pragma: no cover
-    torch = None  # type: ignore
+    torch = None
 
 from askme.core.config import EmbeddingConfig
 
 # Optional symbol for tests to patch without importing heavy deps at module import time
 try:  # pragma: no cover - provide patch point for tests
-    from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel  # type: ignore
+    from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel
 
-    BGEM3FlagModel = _BGEM3FlagModel  # type: ignore
+    BGEM3FlagModel = _BGEM3FlagModel
 except Exception:  # pragma: no cover
-    BGEM3FlagModel = None  # type: ignore
+    BGEM3FlagModel = None
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +47,11 @@ class BGEEmbeddingService:
             logger.info(f"Loading BGE-M3 model: {self.config.model}")
 
             # Load BGE-M3 model
-            global BGEM3FlagModel  # type: ignore
-            if BGEM3FlagModel is None:  # type: ignore
-                from FlagEmbedding import (
-                    BGEM3FlagModel as _BGEM3FlagModel,  # type: ignore
-                )
+            global BGEM3FlagModel
+            if BGEM3FlagModel is None:
+                from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel
 
-                BGEM3FlagModel = _BGEM3FlagModel  # type: ignore
+                BGEM3FlagModel = _BGEM3FlagModel
             self.model = BGEM3FlagModel(
                 self.config.model,
                 use_fp16=(self.device != "cpu" and self.config.use_fp16),
@@ -97,7 +95,8 @@ class BGEEmbeddingService:
                 )
 
                 # Encode batch with BGE-M3
-                assert self.model is not None
+                if self.model is None:
+                    raise RuntimeError("Embedding model not initialized")
                 batch_results = self.model.encode(
                     batch_texts,
                     batch_size=len(batch_texts),
@@ -143,10 +142,9 @@ class BGEEmbeddingService:
             await self.initialize()
 
         try:
-            model = self.model
-            if model is None:
+            if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            result = model.encode(
+            result = self.model.encode(
                 [text],
                 batch_size=1,
                 max_length=self.config.max_length,
@@ -183,10 +181,9 @@ class BGEEmbeddingService:
             await self.initialize()
 
         try:
-            model = self.model
-            if model is None:
+            if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            result = model.encode(
+            result = self.model.encode(
                 [text],
                 batch_size=1,
                 max_length=self.config.max_length,
@@ -234,10 +231,9 @@ class BGEEmbeddingService:
                 query_text = query
 
             # Encode query
-            model = self.model
-            if model is None:
+            if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            results = model.encode(
+            results = self.model.encode(
                 [query_text],
                 batch_size=1,
                 max_length=self.config.max_length,
@@ -439,9 +435,10 @@ class EmbeddingManager:
             results[idx] = emb
 
         # Type ignore: we ensure all filled above
-        from typing import cast
-
-        return [cast(Dict[str, Any], r) for r in results if r is not None]
+        valid_results: List[Dict[str, Any]] = [
+            r for r in results if r is not None
+        ]
+        return valid_results
 
     async def get_query_embedding(
         self, query: str, instruction: Optional[str] = None, use_cache: bool = True

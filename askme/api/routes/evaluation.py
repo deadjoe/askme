@@ -169,6 +169,25 @@ async def run_evaluation(
 
     run_id = str(uuid.uuid4())
 
+    # Apply config overrides to enable parameter sweeps (alpha/topk/top_n etc.)
+    def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(base)
+        for k, v in (override or {}).items():
+            if isinstance(v, dict) and isinstance(out.get(k), dict):
+                out[k] = _deep_merge(out[k], v)
+            else:
+                out[k] = v
+        return out
+
+    run_settings = settings
+    if req.config_overrides:
+        try:
+            merged = _deep_merge(settings.model_dump(), req.config_overrides)
+            run_settings = Settings(**merged)
+        except Exception:
+            # 保底：若覆盖无效，仍使用原 settings，避免中断评测
+            run_settings = settings
+
     # 构建样本：优先使用数据集（由 suite 或 dataset_path 指定），否则回退到固定问题
     request_samples = max(1, (req.sample_size or 3))
     sample_rows: List[Dict[str, Any]] = []
@@ -208,7 +227,7 @@ async def run_evaluation(
                         question = row.get("question") or row.get("q")
                         if not question:
                             continue
-                        pr = await run_pipeline_once(app, question, settings)
+                        pr = await run_pipeline_once(app, question, run_settings)
                         gt = row.get("ground_truths") or row.get("answers") or []
                         if isinstance(gt, str):
                             gt = [gt]
@@ -226,7 +245,7 @@ async def run_evaluation(
 
             # 如果数据集不足，补齐
             while loaded < request_samples:
-                pr = await run_pipeline_once(app, "什么是混合检索？", settings)
+                pr = await run_pipeline_once(app, "什么是混合检索？", run_settings)
                 sample_rows.append(
                     {
                         "question": pr.question,
@@ -239,7 +258,7 @@ async def run_evaluation(
         else:
             # 无数据集则用固定问题重复 N 次（稳定评测）
             for _ in range(request_samples):
-                pr = await run_pipeline_once(app, "什么是混合检索？", settings)
+                pr = await run_pipeline_once(app, "什么是混合检索？", run_settings)
                 sample_rows.append(
                     {
                         "question": pr.question,
@@ -337,9 +356,9 @@ async def run_evaluation(
                     name=s.name,
                     value=s.value,
                     threshold=s.threshold,
-                    passed=(s.value >= s.threshold)
-                    if s.threshold is not None
-                    else True,
+                    passed=(
+                        (s.value >= s.threshold) if s.threshold is not None else True
+                    ),
                     details={
                         "samples": request_samples,
                         "note": "heuristic_fallback",
@@ -398,6 +417,9 @@ async def run_evaluation(
         # Storage failure should not break API
         pass
 
+    # Attach overrides snapshot for traceability
+    if req.config_overrides:
+        response.summary["config_overrides"] = req.config_overrides
     return response
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 RUNS_DIR = Path("data/eval_runs")
 
@@ -31,7 +31,9 @@ def load_run(run_id: str) -> Optional[Dict[str, Any]]:
     if not path.exists():
         return None
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+        # Best-effort typing: persisted payloads are dict-like
+        return cast(Dict[str, Any], data)
 
 
 def list_runs(limit: int = 50, offset: int = 0) -> Dict[str, Any]:
