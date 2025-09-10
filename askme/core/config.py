@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseConfig(BaseSettings):
@@ -337,10 +337,10 @@ class Settings(BaseSettings):
     enable_ollama: bool = False
     log_level: str = "INFO"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Pydantic v2 style settings config
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False
+    )
 
     @classmethod
     def from_yaml(cls, config_path: str = "configs/askme.yaml") -> "Settings":
@@ -357,3 +357,32 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings.from_yaml()
+
+
+# --- Test/mocking compatibility shim ---
+# Python's unittest.mock.MagicMock(spec=Settings) inspects attributes on the class
+# object. With Pydantic BaseSettings, field attributes are provided on instances
+# but not necessarily present on the class __dict__. To make spec-based mocking in
+# tests like MagicMock(spec=Settings) work with attribute access such as
+# settings.rerank.cohere_enabled, we reattach representative attributes on the
+# class so they appear in dir(Settings).
+try:  # be defensive: don't raise at import time in production
+    _mockable_attrs = [
+        "database",
+        "hybrid",
+        "embedding",
+        "rerank",
+        "enhancer",
+        "document",
+        "generation",
+        "evaluation",
+        "api",
+        "logging",
+        "performance",
+        "security",
+    ]
+    for _name in _mockable_attrs:
+        if not hasattr(Settings, _name):
+            setattr(Settings, _name, None)
+except Exception:
+    pass

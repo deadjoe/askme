@@ -567,7 +567,8 @@ async def retrieve_documents(
         dense_hits=35,
         fusion_method="rrf" if req.use_rrf else "alpha",
         alpha=req.alpha,
-        rrf_k=req.rrf_k if req.use_rrf else None,
+        # Always record provided rrf_k for transparency, even if RRF disabled
+        rrf_k=req.rrf_k,
         rerank_model="bge_local",
         latency_ms=900,
         embedding_latency_ms=120,

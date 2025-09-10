@@ -98,3 +98,24 @@ dev = [
     "types-aiofiles>=24.1.0.20250822",
     "types-pyyaml>=6.0.12.20250822",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "--strict-markers --strict-config"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests"
+]
+filterwarnings = [
+    "ignore:.*builtin type swigvarlink has no __module__ attribute.*:DeprecationWarning",
+    "ignore:.*builtin type SwigPyPacked has no __module__ attribute.*:DeprecationWarning",
+    "ignore:.*builtin type SwigPyObject has no __module__ attribute.*:DeprecationWarning",
+    "ignore:.*datetime.datetime.utcnow.*:DeprecationWarning",
+    "ignore::UserWarning"
+]

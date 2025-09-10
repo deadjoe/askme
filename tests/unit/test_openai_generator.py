@@ -22,7 +22,9 @@ class DummyResponse:
 
 class DummyClient:
     def __init__(self) -> None:
-        self.chat = type("c", (), {"completions": type("cc", (), {"create": self._create})})
+        self.chat = type(
+            "c", (), {"completions": type("cc", (), {"create": self._create})}
+        )
 
     def _create(self, **_: Dict[str, Any]) -> DummyResponse:  # type: ignore[no-redef]
         return DummyResponse("ok")
@@ -44,4 +46,3 @@ async def test_openai_generator_uses_base_url(monkeypatch: Any) -> None:
     passages = [Passage(doc_id="d1", title="t1", content="c1", score=0.9)]
     out = await gen.generate("q", passages)
     assert out == "ok"
-

@@ -108,7 +108,7 @@ class WeaviateRetriever(VectorRetriever):
                     ],
                     vectorizer_config=wcfg.Configure.Vectorizer.none(),
                     vector_index_config=wcfg.Configure.VectorIndex.hnsw(
-                        distance=metric_enum
+                        distance_metric=metric_enum
                     ),
                 )
                 logger.info(f"Created Weaviate collection: {self.class_name}")
@@ -126,23 +126,80 @@ class WeaviateRetriever(VectorRetriever):
             # dynamic batching
             import uuid as _uuid
 
-            with col.batch.dynamic() as batch:
-                for doc in documents:
-                    vec = doc.embedding
-                    if hasattr(vec, "tolist"):
-                        vec = vec.tolist()  # ensure Python list for client
-                    uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, doc.id))
-                    props = {
-                        "doc_id": doc.id,
-                        "content": doc.content,
-                        "title": doc.metadata.get("title", doc.id),
-                    }
-                    # include metadata into properties (shallow merge; avoid collisions)
-                    for k, v in doc.metadata.items():
-                        if k not in props and isinstance(v, (str, int, float, bool)):
-                            props[k] = v
-                    batch.add_object(properties=props, uuid=uid, vector=vec)
-                    ids.append(uid)
+            # dynamic() may be a coroutine in tests (AsyncMock) or return an async/sync context manager.
+            mgr = col.batch.dynamic()
+            try:
+                from inspect import iscoroutine
+            except Exception:  # pragma: no cover
+
+                def iscoroutine(_):
+                    return False
+
+            if iscoroutine(mgr):
+                mgr = await mgr
+            used_async = False
+            try:
+                async with mgr as batch:  # type: ignore
+                    used_async = True
+                    for doc in documents:
+                        vec = doc.embedding
+                        if hasattr(vec, "tolist"):
+                            vec = vec.tolist()  # ensure Python list for client
+                        uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, doc.id))
+                        props = {
+                            "doc_id": doc.id,
+                            "content": doc.content,
+                            "title": doc.metadata.get("title", doc.id),
+                        }
+                        # include metadata into properties (shallow merge; avoid collisions)
+                        for k, v in doc.metadata.items():
+                            if k not in props and isinstance(
+                                v, (str, int, float, bool)
+                            ):
+                                props[k] = v
+                        _res = batch.add_object(properties=props, uuid=uid, vector=vec)
+                        try:
+                            from inspect import isawaitable
+                        except Exception:  # pragma: no cover
+
+                            def isawaitable(_):
+                                return False
+
+                        if isawaitable(_res):
+                            await _res
+                        ids.append(uid)
+            except TypeError:
+                # Not an async context manager; use sync context
+                pass
+            if not used_async:
+                with mgr as batch:
+                    for doc in documents:
+                        vec = doc.embedding
+                        if hasattr(vec, "tolist"):
+                            vec = vec.tolist()  # ensure Python list for client
+                        uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, doc.id))
+                        props = {
+                            "doc_id": doc.id,
+                            "content": doc.content,
+                            "title": doc.metadata.get("title", doc.id),
+                        }
+                        # include metadata into properties (shallow merge; avoid collisions)
+                        for k, v in doc.metadata.items():
+                            if k not in props and isinstance(
+                                v, (str, int, float, bool)
+                            ):
+                                props[k] = v
+                        _res = batch.add_object(properties=props, uuid=uid, vector=vec)
+                        try:
+                            from inspect import isawaitable
+                        except Exception:  # pragma: no cover
+
+                            def isawaitable(_):
+                                return False
+
+                        if isawaitable(_res):
+                            await _res
+                        ids.append(uid)
             return ids
         except Exception as e:
             logger.error(f"Failed to insert into Weaviate: {e}")

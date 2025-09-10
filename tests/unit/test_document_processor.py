@@ -104,7 +104,7 @@ class TestDocumentChunker:
 
         content = (
             "First paragraph with enough content to trigger chunking.\n\n"
-            "Second paragraph with enough content to trigger chunking.\n\n" 
+            "Second paragraph with enough content to trigger chunking.\n\n"
             "Third paragraph with enough content to trigger chunking and exceed the chunk size limit significantly."
         )
         chunks = chunker._semantic_chunking(content)
@@ -225,11 +225,14 @@ class TestMarkdownProcessor:
         # Create a proper async context manager mock
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
-        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+        with patch(
+            "askme.ingest.document_processor.aiofiles.open",
+            return_value=async_context_manager,
+        ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -251,11 +254,14 @@ class TestMarkdownProcessor:
 
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
-        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+        with patch(
+            "askme.ingest.document_processor.aiofiles.open",
+            return_value=async_context_manager,
+        ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -296,11 +302,14 @@ class TestHTMLProcessor:
 
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=html_content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
-        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+        with patch(
+            "askme.ingest.document_processor.aiofiles.open",
+            return_value=async_context_manager,
+        ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(html_content)
 
@@ -339,11 +348,14 @@ class TestTextProcessor:
 
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
-        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+        with patch(
+            "askme.ingest.document_processor.aiofiles.open",
+            return_value=async_context_manager,
+        ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
 
@@ -364,20 +376,20 @@ class TestTextProcessor:
         def mock_open_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
             mock_file = MagicMock()
             async_context_manager = AsyncMock()
-            
+
             if kwargs.get("encoding") == "utf-8":
                 mock_file.read = AsyncMock(
                     side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "error")
                 )
             else:
                 mock_file.read = AsyncMock(return_value=content)
-                
+
             async_context_manager.__aenter__.return_value = mock_file
             return async_context_manager
 
         with patch(
             "askme.ingest.document_processor.aiofiles.open",
-            side_effect=mock_open_side_effect
+            side_effect=mock_open_side_effect,
         ):
             with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = len(content)
@@ -407,14 +419,19 @@ class TestDocumentProcessingPipeline:
         pipeline = DocumentProcessingPipeline()
 
         # Mock a longer text file that will meet min_chunk_size requirements
-        content = "This is test content for processing. " * 20  # Make it long enough to chunk
+        content = (
+            "This is test content for processing. " * 20
+        )  # Make it long enough to chunk
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
-        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+        with patch(
+            "askme.ingest.document_processor.aiofiles.open",
+            return_value=async_context_manager,
+        ):
             with patch.object(Path, "exists", return_value=True):
                 with patch.object(Path, "stat") as mock_stat:
                     mock_stat.return_value.st_size = len(content)
@@ -460,11 +477,11 @@ class TestDocumentProcessingPipeline:
         # Mock directory structure
         test_files = [Path("dir/file1.txt"), Path("dir/subdir/file2.md")]
 
-        # Make content long enough to meet min_chunk_size requirements  
+        # Make content long enough to meet min_chunk_size requirements
         content = "Test content for directory processing. " * 25
         mock_file = MagicMock()
         mock_file.read = AsyncMock(return_value=content)
-        
+
         async_context_manager = AsyncMock()
         async_context_manager.__aenter__.return_value = mock_file
 
@@ -485,7 +502,10 @@ class TestDocumentProcessingPipeline:
 
                         mock_rglob.side_effect = rglob_side_effect
 
-                        with patch("askme.ingest.document_processor.aiofiles.open", return_value=async_context_manager):
+                        with patch(
+                            "askme.ingest.document_processor.aiofiles.open",
+                            return_value=async_context_manager,
+                        ):
                             with patch.object(Path, "relative_to") as mock_relative:
                                 mock_relative.return_value = Path("relative_path")
 

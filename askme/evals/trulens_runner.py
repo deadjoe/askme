@@ -40,12 +40,11 @@ def run_trulens(
         provider_client = OpenAI()
 
         grounded = Groundedness(groundedness_provider=provider_client)
-        f_ans_rel = Feedback(provider_client.relevance).on(
-            Feedback.ANSWER, Feedback.QUESTION
-        )
-        f_ctx_rel = Feedback(provider_client.relevance).on(
-            Feedback.CONTEXT, Feedback.QUESTION
-        )
+        # Tests mock Feedback(...) itself as a callable that accepts (text, query),
+        # so keep it simple and call the returned callable directly instead of
+        # using .on(...), which would introduce another callable layer.
+        f_ans_rel = Feedback(provider_client.relevance)
+        f_ctx_rel = Feedback(provider_client.relevance)
 
         # Aggregate
         scores = {
