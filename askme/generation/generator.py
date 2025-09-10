@@ -72,8 +72,10 @@ class SimpleTemplateGenerator(BaseGenerator):
         try:
             titles = [p.title for p in passages[:2]]
             top_titles = ", ".join(titles) or "context"
-            summary = f"Summary: Based on {top_titles}, " \
-                      f"the answer is grounded in retrieved context."
+            summary = (
+                f"Summary: Based on {top_titles}, "
+                f"the answer is grounded in retrieved context."
+            )
             lines.append(summary)
         except Exception:
             pass
