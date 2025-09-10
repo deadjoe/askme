@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 import aiofiles
 import pypdf
 from bs4 import BeautifulSoup
+from bs4.element import Tag as _Bs4Tag
 from markdownify import markdownify
 
 from askme.retriever.base import Document
@@ -213,12 +214,13 @@ class HTMLProcessor(DocumentProcessor):
 
             # Extract metadata from HTML
             meta_tags = soup.find_all("meta")
-            html_meta = {}
+            html_meta: Dict[str, Any] = {}
             for tag in meta_tags:
-                name = tag.get("name") or tag.get("property")
-                content = tag.get("content")
-                if name and content:
-                    html_meta[name] = content
+                if isinstance(tag, _Bs4Tag):
+                    name = tag.get("name") or tag.get("property")
+                    content = tag.get("content")
+                    if name and content:
+                        html_meta[str(name)] = content
 
             doc_metadata = {
                 "source_type": "html",
@@ -384,10 +386,11 @@ class DocumentChunker:
             if len(chunk.strip()) >= self.config.min_chunk_size:
                 chunks.append(chunk.strip())
 
-            # Move start position with overlap
-            start = end - self.config.chunk_overlap
-            if start <= 0:
-                break
+            # Move start position with overlap（在极端 overlap>=chunk_size 时保持前进防止卡死）
+            if self.config.chunk_overlap >= self.config.chunk_size:
+                start = end  # 无法重叠，直接顺移
+            else:
+                start = max(end - self.config.chunk_overlap, start + 1)
 
         return chunks
 

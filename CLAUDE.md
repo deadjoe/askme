@@ -190,6 +190,7 @@ Before committing:
 
 ## Contributing
 - Commit messages: Professional, concise, English
+- Don't include Cluade as co-author in new commit and keep checking the previous commited and pushed commits to prevent Claude as the Co-author
 - Documentation: Technical accuracy, open-source ready
 - Code comments: English, focused on "why" not "what"
 - APIs: RESTful, well-documented, backward compatible

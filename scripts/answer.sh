@@ -7,14 +7,14 @@ set -euo pipefail
 
 # Default values
 QUESTION=""
-TOPK=50
-ALPHA=0.5
+TOPK=30
+ALPHA=0.0
 USE_RRF=true
 RRF_K=60
 USE_HYDE=false
 USE_RAG_FUSION=false
 RERANKER="bge_local"
-MAX_PASSAGES=8
+MAX_PASSAGES=5
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 OUTPUT_FORMAT="text"
 INCLUDE_DEBUG=false
