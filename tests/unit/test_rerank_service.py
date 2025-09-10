@@ -100,9 +100,8 @@ class TestBGEReranker:
         # Mock FlagReranker
         mock_model = MagicMock()
 
-        with patch(
-            "askme.rerank.rerank_service.FlagReranker", create=True
-        ) as mock_flag:
+        # Need to patch both the import and the class itself
+        with patch("FlagEmbedding.FlagReranker", create=True) as mock_flag:
             mock_flag.return_value = mock_model
 
             await reranker.initialize()
@@ -132,7 +131,7 @@ class TestBGEReranker:
                 raise Exception("Unexpected model")
 
         with patch(
-            "askme.rerank.rerank_service.FlagReranker",
+            "FlagEmbedding.FlagReranker",
             side_effect=flag_reranker_side_effect,
             create=True,
         ):
@@ -147,9 +146,13 @@ class TestBGEReranker:
         config = RerankConfig()
         reranker = BGEReranker(config)
 
+        # Use a specific error that won't trigger fallback logic
+        def flag_reranker_side_effect(*args, **kwargs):
+            raise Exception("Model load failed - not trust_remote_code related")
+
         with patch(
-            "askme.rerank.rerank_service.FlagReranker",
-            side_effect=Exception("Model load failed"),
+            "FlagEmbedding.FlagReranker",
+            side_effect=flag_reranker_side_effect,
             create=True,
         ):
             with pytest.raises(Exception, match="Model load failed"):
