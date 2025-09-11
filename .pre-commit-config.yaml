@@ -38,14 +38,3 @@ repos:
     hooks:
       - id: bandit
         args: ["-c", "pyproject.toml"]
-
-# Safety hook temporarily disabled due to typer compatibility issue
-# TODO: Re-enable when safety tool is compatible with latest typer version
-#  - repo: local
-#    hooks:
-#      - id: safety
-#        name: safety
-#        entry: safety
-#        args: ["check", "--json"]
-#        language: system
-#        pass_filenames: false

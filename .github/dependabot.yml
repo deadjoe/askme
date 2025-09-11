@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Enable version updates for pip
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "deadjoe"
+    assignees:
+      - "deadjoe"
+    # Group non-security updates
+    groups:
+      development-dependencies:
+        patterns:
+          - "pytest*"
+          - "black"
+          - "isort"
+          - "mypy"
+          - "flake8"
+          - "pre-commit"
+      ml-dependencies:
+        patterns:
+          - "torch"
+          - "transformers"
+          - "sentence-transformers"
+          - "FlagEmbedding"
+    # Allow security updates immediately
+    allow:
+      - dependency-type: "all"
