@@ -6,156 +6,361 @@
 [![Framework](https://img.shields.io/badge/FastAPI-ready-009688)](https://fastapi.tiangolo.com/)
 [![Tests](https://img.shields.io/badge/tests-pytest-green)](https://pytest.org/)
 [![Coverage](https://img.shields.io/badge/coverage-~88%25-success)](./htmlcov)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Production‑ready Hybrid RAG (Retrieval‑Augmented Generation) system with hybrid search, local reranking, optional cloud fallback, and built‑in evaluation.
+Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelligent reranking, multi-backend vector database support, and comprehensive evaluation framework.
 
 ## Features
 
-- Hybrid search (alpha/rrf) combining BM25/sparse and dense vectors
-- Local BGE reranker (FlagEmbedding) with optional Cohere fallback
-- Query enhancement: HyDE + RAG‑Fusion (deterministic, no external LLM)
-- Vector backends: Milvus 2.5+ (primary, with sparse BM25), Weaviate, Qdrant
-- Evaluation: TruLens triad + Ragas 0.2 metrics（可选，自动降级）
-- FastAPI service with health/readiness endpoints，脚本与 Docker 编排
+- **Hybrid Search**: Combines BM25/sparse and dense vector retrieval with configurable fusion methods (Alpha, RRF, relative scoring)
+- **Intelligent Reranking**: Local BGE-reranker-v2.5 with Cohere Rerank 3.5 fallback for optimal relevance scoring
+- **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
+- **Multi-Backend Support**: Milvus 2.5+ (primary with sparse BM25), Weaviate, and Qdrant vector databases
+- **Comprehensive Evaluation**: TruLens RAG Triad and Ragas v0.2+ metrics with A/B testing capabilities
+- **Production Ready**: FastAPI service with health checks, Docker deployment, monitoring, and extensive configuration
 
 ## Architecture
 
 ```
-Documents → Ingest → Vector DB → Query → Retrieve (topK=50)
-→ Rerank (topN=8) → Generate → Answer + Citations → Evaluate
+Documents → Ingest → Vector DB (Hybrid Index) → Query → Retrieve (topK=50) →
+Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 ```
 
 ### Core Technologies
 
-- Embeddings: BGE‑M3（dense+sparse）
-- Vector DB: Milvus 2.5+（内建 BM25 + hybrid），Weaviate/Qdrant
-- Reranking: BAAI/bge‑reranker‑v2.5‑gemma2‑lightweight（本地），Cohere Rerank 3.5（可选）
-- Framework: FastAPI（Python 3.10+）
-- Evaluation: TruLens + Ragas 0.2
+- **Embeddings**: BGE-M3 multilingual model (dense + sparse support)
+- **Vector Database**: Milvus 2.5+ with native sparse BM25 (primary), Weaviate/Qdrant alternatives
+- **Reranking**: BAAI/bge-reranker-v2.5-gemma2-lightweight (local), Cohere Rerank 3.5 (cloud fallback)
+- **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
+- **Evaluation**: TruLens + Ragas frameworks with automated quality thresholds
+- **Generation**: OpenAI-compatible, local Ollama, or template-based approaches
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
-- [uv](https://github.com/astral-sh/uv) package manager
-- Docker / Docker Compose（用于向量库与一体化部署）
+- Python 3.10 or higher
+- [uv](https://github.com/astral-sh/uv) package manager (recommended) or pip
+- Docker and Docker Compose (for vector database and full deployment)
 
 ### Installation
 
 ```bash
-# 克隆与安装
-git clone <repository-url>
+# Clone the repository
+git clone https://github.com/deadjoe/askme.git
 cd askme
+
+# Install dependencies
 uv sync --dev
 
-# 启动向量库（Milvus）
+# Start vector database (Milvus)
 docker compose -f docker/docker-compose.yaml up -d milvus
 
-# 启动 API（开发模式，可跳过重量初始化）
+# Start API server (development mode)
 ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
 ```
 
 ### Basic Usage
 
 ```bash
-# 文档入库（自动判断 file/dir/url）
-./scripts/ingest.sh /path/to/documents --tags="project,docs"
+# Ingest documents
+./scripts/ingest.sh /path/to/documents --tags="project,documentation"
 
-# 直接问答
+# Ask questions
 ./scripts/answer.sh "What is machine learning?"
 
-# 仅检索（调参/调试）
-./scripts/retrieve.sh "hybrid search" --topk 25 --alpha 0.7
+# Retrieve documents only (for debugging/tuning)
+./scripts/retrieve.sh "hybrid search techniques" --topk 25 --alpha 0.7
 
-# 评测
+# Run evaluation
 ./scripts/evaluate.sh --suite=baseline
 ```
 
 ## Configuration
 
-配置来源：`configs/askme.yaml`（若存在）→ 环境变量 → 默认值（Pydantic Settings）。核心项：
+Configuration is managed through `configs/askme.yaml` with environment variable overrides. Key parameters:
 
 ```yaml
-# 向量后端（默认 milvus）
+# Vector backend selection
 vector_backend: milvus  # milvus | weaviate | qdrant
 
-hybrid:                 # 混合检索
+# Hybrid search configuration
+hybrid:
   mode: rrf             # rrf | alpha | relative_score | ranked
-  use_rrf: true         # 兼容标志
-  alpha: 0.5
-  rrf_k: 60
-  topk: 50
+  alpha: 0.5           # 0=sparse only, 1=dense only, 0.5=balanced
+  rrf_k: 60            # RRF fusion parameter
+  topk: 50             # Initial retrieval candidates
 
+# Embedding model
 embedding:
   model: BAAI/bge-m3
+  dimension: 1024
+  normalize_embeddings: true
 
+# Reranking
 rerank:
   local_model: BAAI/bge-reranker-v2.5-gemma2-lightweight
   local_enabled: true
-  cohere_enabled: false  # 可通过环境变量开启
+  cohere_enabled: false  # Enable via ASKME_ENABLE_COHERE=1
+  top_n: 8
 
+# Generation
 generation:
   provider: simple       # simple | ollama | openai
   ollama_endpoint: http://localhost:11434
-  openai_base_url: https://api.openai.com/v1
   openai_model: gpt-4o-mini
 ```
 
-常用环境变量：
-- `ASKME_SKIP_HEAVY_INIT=1` 开发时跳过重量初始化
-- `ASKME_ENABLE_COHERE=1` + `COHERE_API_KEY` 启用 Cohere rerank
-- `ASKME_ENABLE_OLLAMA=1` 或 `generation.provider=ollama` 启用本地 Ollama
-- `OPENAI_BASE_URL` / `OPENAI_API_KEY`（评测与 OpenAI 兼容端口）
+### Environment Variables
 
-## API Endpoints
+- `ASKME_SKIP_HEAVY_INIT=1` - Skip heavy service initialization during development
+- `ASKME_ENABLE_COHERE=1` + `COHERE_API_KEY` - Enable Cohere reranking
+- `ASKME_ENABLE_OLLAMA=1` - Enable local Ollama generation
+- `OPENAI_BASE_URL` / `OPENAI_API_KEY` - OpenAI-compatible endpoints for evaluation
 
-基路径按 router 注册：`/health`, `/ingest`, `/query`, `/eval`
+## API Reference
 
-### Health
-- `GET /health/` 基础健康检查
-- `GET /health/ready` 就绪检查
-- `GET /health/live` 存活检查
+### Health Endpoints
+- `GET /health/` - Basic health check
+- `GET /health/ready` - Readiness check for orchestration
+- `GET /health/live` - Liveness check for orchestration
 
-### Ingest
-- `POST /ingest/` 统一入库（file/dir，URL 未实现将返回 501）
-- `POST /ingest/file`、`POST /ingest/directory` 精细化入库
-- `GET /ingest/status/{task_id}` 任务状态
-- `GET /ingest/stats` 全局统计
+### Document Ingestion
+- `POST /ingest/` - Universal document ingestion (file/directory)
+- `POST /ingest/file` - Single file ingestion
+- `POST /ingest/directory` - Directory ingestion with recursion
+- `GET /ingest/status/{task_id}` - Task status monitoring
+- `GET /ingest/stats` - Global ingestion statistics
 
-### Query
-- `POST /query/` 混合检索 + 重排 + 生成（`include_debug` 可返回调试指标）
-- `POST /query/retrieve` 仅检索（便于调参与调试）
-- `GET /query/similar/{doc_id}` 相似文档（占位返回样例）
-- `POST /query/explain` 检索解释（占位返回样例）
+### Query & Retrieval
+- `POST /query/` - Hybrid search + reranking + generation pipeline
+- `POST /query/retrieve` - Retrieval-only endpoint for debugging
+- `GET /query/similar/{doc_id}` - Similar document discovery
+- `POST /query/explain` - Retrieval explanation (debugging)
 
 ### Evaluation
-- `POST /eval/run` 运行评测（TruLens + Ragas，自动回退）
-- `GET /eval/runs/{run_id}` 查看评测结果
-- `POST /eval/compare` 评测对比
-- `GET /eval/runs` 列出最近评测
-- `DELETE /eval/runs/{run_id}` 删除评测
-- `GET /eval/metrics` 可用指标
+- `POST /eval/run` - Execute evaluation pipeline with TruLens + Ragas
+- `GET /eval/runs/{run_id}` - Retrieve evaluation results
+- `POST /eval/compare` - A/B test comparison between runs
+- `GET /eval/runs` - List recent evaluation runs
+- `DELETE /eval/runs/{run_id}` - Delete evaluation run
+- `GET /eval/metrics` - Available evaluation metrics
+
+### Example Query Request
+
+```bash
+curl -X POST "http://localhost:8080/query/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "q": "What is machine learning?",
+    "topk": 50,
+    "alpha": 0.5,
+    "use_rrf": true,
+    "reranker": "bge_local",
+    "max_passages": 8,
+    "include_debug": true
+  }'
+```
+
+## Deployment
+
+### Docker Deployment
+
+```bash
+# Full stack with Milvus (recommended)
+docker compose -f docker/docker-compose.yaml up -d
+
+# Alternative vector databases
+docker compose -f docker/docker-compose.yaml --profile weaviate up -d
+docker compose -f docker/docker-compose.yaml --profile qdrant up -d
+
+# With monitoring
+docker compose -f docker/docker-compose.yaml --profile monitoring up -d
+```
+
+### Production Considerations
+
+- **Performance Targets**: P95 < 1500ms retrieval, < 1800ms with reranking
+- **Scaling**: ~50k documents per node, horizontal scaling via load balancing
+- **Security**: Local-only by default, cloud services require explicit opt-in
+- **Monitoring**: Prometheus metrics and Grafana dashboards included
 
 ## Development
 
+### Setup Development Environment
+
 ```bash
-# 安装开发依赖
+# Install development dependencies
 uv sync --dev
 
-# 运行测试（严格 markers 配置、asyncio=strict 已在 pyproject.toml 内）
-uv run pytest -ra
+# Install pre-commit hooks
+uv run pre-commit install
 
-# 覆盖率
+# Run tests with coverage
 uv run pytest --cov=askme --cov-report=term --cov-report=html
 
-# 代码风格与类型
+# Code formatting and type checking
 uv run black askme tests && uv run isort askme tests
 uv run mypy askme
 ```
 
-Pytest markers：`unit`、`integration`、`slow`。示例：`uv run pytest -m 'unit and not slow'`。
+### Testing
+
+The project includes comprehensive test coverage with pytest:
+
+```bash
+# Run all tests
+uv run pytest -ra
+
+# Run specific test categories
+uv run pytest -m "unit and not slow"
+uv run pytest -m integration
+uv run pytest -m "slow"
+
+# Run with coverage reporting
+uv run pytest --cov=askme --cov-report=html
+```
+
+**Test Markers:**
+- `unit`: Unit tests for individual components
+- `integration`: Cross-component integration tests
+- `slow`: Time-intensive tests (model loading, evaluation)
+
+### Code Quality
+
+The project maintains high code quality standards:
+
+- **Formatting**: Black and isort for consistent code style
+- **Type Checking**: MyPy with strict configuration
+- **Linting**: Flake8 with Black-compatible settings
+- **Security**: Bandit security analysis
+- **Pre-commit Hooks**: Automated quality checks on commit
+
+## Evaluation
+
+### Built-in Evaluation Suites
+
+```bash
+# Comprehensive baseline evaluation
+./scripts/evaluate.sh --suite=baseline
+
+# Quick evaluation for CI/CD
+./scripts/evaluate.sh --suite=quick --sample-size=3
+
+# Custom dataset evaluation
+./scripts/evaluate.sh --dataset="/path/to/qa_dataset.jsonl" --metrics="faithfulness,context_precision"
+
+# Parameter tuning evaluation
+./scripts/evaluate.sh --suite=baseline --alpha=0.3 --topk=75 --topn=10
+```
+
+### Available Metrics
+
+**TruLens RAG Triad:**
+- **Context Relevance**: How relevant retrieved context is to the query
+- **Groundedness**: How well the answer is supported by retrieved context
+- **Answer Relevance**: How relevant the answer is to the original query
+
+**Ragas Metrics:**
+- **Faithfulness**: Factual consistency of answer with retrieved context
+- **Answer Relevancy**: Semantic relevance of answer to query
+- **Context Precision**: Precision of retrieved context chunks
+- **Context Recall**: Recall of relevant context chunks
+
+### Quality Thresholds
+
+- **TruLens Triad**: ≥ 0.7 (configurable)
+- **Ragas Faithfulness**: ≥ 0.7 (configurable)
+- **Context Precision**: ≥ 0.6 (configurable)
+- **Answer Consistency**: ≥ 90% with fixed seeds
+
+## Contributing
+
+We welcome contributions to the askme project! Please follow these guidelines:
+
+### Development Workflow
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes following the code style guidelines
+4. Add or update tests for your changes
+5. Ensure all tests pass and code quality checks succeed
+6. Update documentation as needed
+7. Submit a pull request with a clear description
+
+### Code Style Guidelines
+
+- **Language**: All code, documentation, and commit messages must be in English
+- **Formatting**: Use Black (line length 88) and isort for imports
+- **Type Hints**: All functions must include proper type annotations
+- **Documentation**: Follow Google-style docstrings
+- **Testing**: Maintain or improve test coverage (currently ~88%)
+
+### Quality Gates
+
+Before submitting a PR, ensure:
+
+```bash
+# All tests pass
+uv run pytest
+
+# Code formatting
+uv run black askme tests && uv run isort askme tests
+
+# Type checking
+uv run mypy askme
+
+# Security check
+uv run bandit -r askme
+
+# Basic evaluation passes
+./scripts/evaluate.sh --suite=quick
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Slow Retrieval Performance**
+   - Check hybrid search parameters (alpha, RRF vs alpha fusion)
+   - Verify vector database connection and indexing
+   - Monitor embedding service latency
+
+2. **Poor Reranking Quality**
+   - Ensure local BGE-reranker model is properly loaded
+   - Check Cohere API key and fallback configuration
+   - Verify reranking score thresholds
+
+3. **Memory Issues**
+   - Adjust batch sizes in `configs/askme.yaml`
+   - Use `ASKME_SKIP_HEAVY_INIT=1` for development
+   - Monitor model memory usage (BGE-M3 + reranker)
+
+4. **Evaluation Failures**
+   - Check TruLens and Ragas library versions
+   - Verify evaluation dataset format (JSONL with required fields)
+   - Ensure OpenAI-compatible API access for evaluation LLM
+
+### Getting Help
+
+- Check the [documentation](docs/) for detailed guides
+- Review [troubleshooting guide](docs/troubleshooting.md) for specific issues
+- Submit issues via [GitHub Issues](https://github.com/deadjoe/askme/issues)
+- Review [CLAUDE.md](CLAUDE.md) for development context
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [BAAI](https://github.com/FlagOpen/FlagEmbedding) for BGE-M3 embeddings and reranker models
+- [Milvus](https://milvus.io/) for hybrid search capabilities with sparse BM25 support
+- [TruLens](https://www.trulens.org/) and [Ragas](https://docs.ragas.io/) for evaluation frameworks
+- [FastAPI](https://fastapi.tiangolo.com/) for the high-performance web framework
 
 ---
 
-Built for the RAG community
+**Built for the RAG community**
+
+For more technical details, see our [Product Specification](docs/askme_Product_Spec.md) and [Design Document](docs/askme_Design_Doc.md).
