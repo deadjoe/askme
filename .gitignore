@@ -182,3 +182,6 @@ data/eval_runs/*
 # Backup files
 *.bak
 *.backup
+
+# Internal documentation (not for public release)
+docs/
