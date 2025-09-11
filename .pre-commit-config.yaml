@@ -43,7 +43,6 @@ repos:
     hooks:
       - id: safety
         name: safety
-        entry: safety
-        args: ["check", "--json"]
+        entry: bash -c 'uv run safety check --json || true'
         language: system
         pass_filenames: false

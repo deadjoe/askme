@@ -360,7 +360,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - [FastAPI](https://fastapi.tiangolo.com/) for the high-performance web framework
 
 ---
-
-**Built for the RAG community**
-
-For more technical details, see our [Product Specification](docs/askme_Product_Spec.md) and [Design Document](docs/askme_Design_Doc.md).
