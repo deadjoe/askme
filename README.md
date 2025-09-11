@@ -343,10 +343,9 @@ uv run bandit -r askme
 
 ### Getting Help
 
-- Check the [documentation](docs/) for detailed guides
-- Review [troubleshooting guide](docs/troubleshooting.md) for specific issues
 - Submit issues via [GitHub Issues](https://github.com/deadjoe/askme/issues)
 - Review [CLAUDE.md](CLAUDE.md) for development context
+- Check the codebase for implementation details and examples
 
 ## License
 
