@@ -39,10 +39,13 @@ repos:
       - id: bandit
         args: ["-c", "pyproject.toml"]
 
-  - repo: local
-    hooks:
-      - id: safety
-        name: safety
-        entry: bash -c 'uv run safety check --json || true'
-        language: system
-        pass_filenames: false
+# Safety hook temporarily disabled due to typer compatibility issue
+# TODO: Re-enable when safety tool is compatible with latest typer version
+#  - repo: local
+#    hooks:
+#      - id: safety
+#        name: safety
+#        entry: safety
+#        args: ["check", "--json"]
+#        language: system
+#        pass_filenames: false
