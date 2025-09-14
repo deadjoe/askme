@@ -10,7 +10,12 @@ from typing import Any, Dict, List
 
 import pytest
 
-from askme.api.routes.query import QueryRequest, RetrievalRequest, query_documents, retrieve_documents
+from askme.api.routes.query import (
+    QueryRequest,
+    RetrievalRequest,
+    query_documents,
+    retrieve_documents,
+)
 from askme.core.config import Settings
 from askme.retriever.base import Document, RetrievalResult
 
@@ -25,7 +30,9 @@ def _mk_results(ids: List[str]) -> List[RetrievalResult]:
     for i, did in enumerate(ids, 1):
         out.append(
             RetrievalResult(
-                document=Document(id=did, content=f"content {did}", metadata={"title": did}),
+                document=Document(
+                    id=did, content=f"content {did}", metadata={"title": did}
+                ),
                 score=1.0 - i * 0.01,
                 rank=i,
                 retrieval_method="hybrid",
@@ -105,11 +112,12 @@ async def test_retrieve_documents_real_path_rrf_enabled_hybrid_fallbacks() -> No
     req.app.state.retriever = _Ret()
 
     settings = Settings()
-    r = RetrievalRequest(q="test", use_rrf=True, rrf_k=70, use_hyde=True, use_rag_fusion=True)
+    r = RetrievalRequest(
+        q="test", use_rrf=True, rrf_k=70, use_hyde=True, use_rag_fusion=True
+    )
     resp = await retrieve_documents(r, req, settings)
 
     assert len(resp.documents) > 0
     assert resp.retrieval_debug is not None
     assert resp.retrieval_debug.fusion_method == "rrf"
     assert resp.retrieval_debug.rrf_k == 70
-

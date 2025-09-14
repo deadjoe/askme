@@ -87,10 +87,24 @@ def test_ragas_success_with_fallback_and_alias(monkeypatch) -> None:
     sys.modules["ragas.embeddings"] = SimpleNamespace(HuggingFaceEmbeddings=_HFEmb)
     sys.modules["ragas.llms"] = SimpleNamespace(OpenAI=_OpenAI)
 
-    samples = [{"question": "q", "answer": "a", "contexts": ["c"], "ground_truths": ["g"]}]
+    samples = [
+        {"question": "q", "answer": "a", "contexts": ["c"], "ground_truths": ["g"]}
+    ]
     # include alias 'answer_relevance' to test mapping
-    scores = run_ragas(samples, metrics=["faithfulness", "answer_relevance", "context_precision", "context_recall"])
-    assert set(scores.keys()) == {"faithfulness", "answer_relevance", "context_precision", "context_recall"}
+    scores = run_ragas(
+        samples,
+        metrics=[
+            "faithfulness",
+            "answer_relevance",
+            "context_precision",
+            "context_recall",
+        ],
+    )
+    assert set(scores.keys()) == {
+        "faithfulness",
+        "answer_relevance",
+        "context_precision",
+        "context_recall",
+    }
     # All metric means resolved via .mean() -> 0.8
     assert all(abs(v - 0.8) < 1e-6 for v in scores.values())
-

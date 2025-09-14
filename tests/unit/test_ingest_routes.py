@@ -15,13 +15,13 @@ from askme.api.routes.ingest import (
     IngestDirectoryPayload,
     IngestFilePayload,
     IngestRequest,
+    cancel_ingestion_task,
+    get_ingestion_stats,
+    get_ingestion_status,
     ingest_directory_endpoint,
     ingest_documents,
     ingest_file_endpoint,
     upload_and_ingest,
-    get_ingestion_status,
-    cancel_ingestion_task,
-    get_ingestion_stats,
 )
 from askme.core.config import Settings
 from askme.ingest.ingest_service import IngestionStats, IngestionTask, TaskStatus
@@ -44,12 +44,16 @@ async def test_ingest_documents_validations_tmpdir(tmp_path) -> None:
 
     # file path not exists
     with pytest.raises(HTTPException) as exc:
-        await ingest_documents(IngestRequest(source="file", path=str(tmp_path / "x.txt")), req, settings)
+        await ingest_documents(
+            IngestRequest(source="file", path=str(tmp_path / "x.txt")), req, settings
+        )
     assert exc.value.status_code == 404
 
     # dir path not exists
     with pytest.raises(HTTPException) as exc:
-        await ingest_documents(IngestRequest(source="dir", path=str(tmp_path / "d")), req, settings)
+        await ingest_documents(
+            IngestRequest(source="dir", path=str(tmp_path / "d")), req, settings
+        )
     assert exc.value.status_code == 404
 
     # path is not a file
@@ -68,7 +72,9 @@ async def test_ingest_documents_validations_tmpdir(tmp_path) -> None:
 
     # URL not implemented
     with pytest.raises(HTTPException) as exc:
-        await ingest_documents(IngestRequest(source="url", path="http://x"), req, settings)
+        await ingest_documents(
+            IngestRequest(source="url", path="http://x"), req, settings
+        )
     assert exc.value.status_code == 501
 
 
@@ -89,13 +95,17 @@ async def test_ingest_documents_calls_service(tmp_path) -> None:
     # file happy path
     f = tmp_path / "a.txt"
     f.write_text("hi")
-    out = await ingest_documents(IngestRequest(source="file", path=str(f)), req, settings)
+    out = await ingest_documents(
+        IngestRequest(source="file", path=str(f)), req, settings
+    )
     assert out.task_id == "tid-file"
 
     # dir happy path
     d = tmp_path / "ad"
     d.mkdir()
-    out = await ingest_documents(IngestRequest(source="dir", path=str(d)), req, settings)
+    out = await ingest_documents(
+        IngestRequest(source="dir", path=str(d)), req, settings
+    )
     assert out.task_id == "tid-dir"
 
 
@@ -206,4 +216,3 @@ async def test_get_ingestion_status_and_stats() -> None:
 async def test_cancel_endpoint() -> None:
     out = await cancel_ingestion_task("tid", Settings())
     assert out["status"] == "cancelled"
-

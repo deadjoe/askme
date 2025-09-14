@@ -19,6 +19,7 @@ from askme.core.embeddings import BGEEmbeddingService
 async def test_encode_query_normalization_default():
     cfg = EmbeddingConfig(normalize_embeddings=True)
     svc = BGEEmbeddingService(cfg)
+
     # Patch model and mark initialized
     class _M:
         def encode(self, *args: Any, **kwargs: Any):  # type: ignore[no-redef]
@@ -41,8 +42,11 @@ def test_convert_sparse_embedding_variants():
     # list -> indices of nonzero
     l = svc._convert_sparse_embedding([0.0, 0.1, 0.0, 0.2])
     assert l == {1: 0.1, 3: 0.2}
+
     # unknown -> {}
-    class _X: ...
+    class _X:
+        ...
+
     assert svc._convert_sparse_embedding(_X()) == {}
 
 
@@ -52,7 +56,10 @@ async def test_compute_similarity_dense_sparse_hybrid_and_errors():
     svc = BGEEmbeddingService(cfg)
     q = {"dense_embedding": [1.0, 0.0], "sparse_embedding": {0: 1.0, 2: 0.5}}
     docs = [
-        {"dense_embedding": [0.0, 1.0], "sparse_embedding": {1: 0.2}},  # orthogonal dense
+        {
+            "dense_embedding": [0.0, 1.0],
+            "sparse_embedding": {1: 0.2},
+        },  # orthogonal dense
         {"dense_embedding": [1.0, 0.0], "sparse_embedding": {0: 0.5}},  # dense match
     ]
     # dense
@@ -73,11 +80,13 @@ async def test_compute_similarity_dense_sparse_hybrid_and_errors():
 async def test_cleanup_resets_state(monkeypatch):
     cfg = EmbeddingConfig()
     svc = BGEEmbeddingService(cfg)
-    class _M: ...
+
+    class _M:
+        ...
+
     svc.model = _M()
     svc._is_initialized = True
     # Simulate no torch.cuda available path
     monkeypatch.setattr("askme.core.embeddings.torch", None, raising=False)
     await svc.cleanup()
     assert svc.model is None and svc._is_initialized is False
-
