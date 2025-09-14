@@ -14,7 +14,7 @@ from askme.retriever.base import Document, RetrievalResult
 def mock_settings():
     """Mock settings for testing."""
     return Settings(
-        vector_backend="milvus",
+        vector_backend="weaviate",
         database={"host": "localhost", "port": 19530},
         embedding={"model": "BAAI/bge-m3", "dimension": 1024},
         rerank={"local_enabled": True, "local_model": "BAAI/bge-reranker-v2.5"},
