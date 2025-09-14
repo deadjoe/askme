@@ -5,9 +5,9 @@ More tests for WeaviateRetriever to push coverage: stats dict path, sync batch, 
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from askme.retriever.base import Document
 from askme.retriever.weaviate_retriever import WeaviateRetriever
@@ -35,8 +35,10 @@ async def test_get_collection_stats_total_count_dict_path():
     col.config.get.return_value = info
     agg = {"total_count": 123}
     col.aggregate.over_all.return_value = agg
+
     async def _ensure():
         return col
+
     r._ensure_collection = _ensure  # type: ignore[assignment]
     out = await r.get_collection_stats()
     assert out["num_entities"] == 123
@@ -61,16 +63,27 @@ class _SyncBatcher:
 @pytest.mark.asyncio
 async def test_insert_documents_sync_batch_path():
     r = WeaviateRetriever({"class_name": "C"})
+
     class _Col:
         def __init__(self) -> None:
             self.batch = _SyncBatcher()
+
     c = _Col()
+
     async def _ensure():
         return c
+
     r._ensure_collection = _ensure  # type: ignore[assignment]
-    ids = await r.insert_documents([
-        Document(id="a", content="x", metadata={"views": 3, "flag": True, "note": "n"}, embedding=[0.1]),
-    ])
+    ids = await r.insert_documents(
+        [
+            Document(
+                id="a",
+                content="x",
+                metadata={"views": 3, "flag": True, "note": "n"},
+                embedding=[0.1],
+            ),
+        ]
+    )
     assert len(ids) == 1
 
 
@@ -83,8 +96,10 @@ async def test_get_document_fallback_get_by_id():
     o.uuid = "u"
     o.properties = {"content": "c", "doc_id": "d"}
     col.data.objects.get_by_id.return_value = o
+
     async def _ensure2():
         return col
+
     r._ensure_collection = _ensure2  # type: ignore[assignment]
     doc = await r.get_document("d")
     assert doc and doc.id == "d"
@@ -95,7 +110,9 @@ async def test_update_document_failure_on_insert():
     r = WeaviateRetriever({"class_name": "C"})
     with patch.object(r, "delete_document", return_value=True):
         with patch.object(r, "insert_documents", side_effect=Exception("boom")):
-            ok = await r.update_document("d", Document(id="d", content="c", metadata={}, embedding=[0.1]))
+            ok = await r.update_document(
+                "d", Document(id="d", content="c", metadata={}, embedding=[0.1])
+            )
             assert ok is False
 
 
@@ -107,10 +124,12 @@ async def test__ensure_collection_creates_when_get_fails():
     client.collections = cols
     cols.get.side_effect = [Exception("missing"), MagicMock()]
     r.client = client
+
     # Patch create_collection to set r.collection
     async def _create(dim: int):  # type: ignore[no-redef]
         r.collection = MagicMock()
         return None
+
     r.create_collection = _create  # type: ignore[assignment]
     col = await r._ensure_collection()
     assert col is not None
@@ -121,13 +140,17 @@ async def test_delete_document_multiple_matches():
     r = WeaviateRetriever({"class_name": "C"})
     col = MagicMock()
     res = MagicMock()
-    o1 = MagicMock(); o1.uuid = "u1"
-    o2 = MagicMock(); o2.uuid = "u2"
+    o1 = MagicMock()
+    o1.uuid = "u1"
+    o2 = MagicMock()
+    o2.uuid = "u2"
     res.objects = [o1, o2]
     col.query.fetch_objects.return_value = res
     col.data.objects.delete_by_id.return_value = None
+
     async def _ensure():
         return col
+
     r._ensure_collection = _ensure  # type: ignore[assignment]
     ok = await r.delete_document("d")
     assert ok is True

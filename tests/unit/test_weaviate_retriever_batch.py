@@ -47,6 +47,7 @@ async def test_insert_documents_async_batch_path():
     # Patch _ensure_collection to our fake collection (async)
     async def _ensure() -> Any:
         return col
+
     r._ensure_collection = _ensure  # type: ignore[assignment]
 
     docs = [

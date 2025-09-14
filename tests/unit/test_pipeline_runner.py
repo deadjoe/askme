@@ -25,7 +25,9 @@ def _mk_results(ids: List[str]) -> List[RetrievalResult]:
     for i, did in enumerate(ids, 1):
         out.append(
             RetrievalResult(
-                document=Document(id=did, content=f"content {did}", metadata={"title": did}),
+                document=Document(
+                    id=did, content=f"content {did}", metadata={"title": did}
+                ),
                 score=1.0 - i * 0.01,
                 rank=i,
                 retrieval_method="hybrid",
@@ -128,4 +130,3 @@ async def test_run_pipeline_once_with_hyde_and_rag_fusion_rrf() -> None:
     # Should have executed multiple queries and still produce an answer
     assert result.answer == "answer with rrf"
     assert result.contexts and isinstance(result.citations, list)
-

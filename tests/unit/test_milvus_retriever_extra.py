@@ -5,11 +5,11 @@ More tests for MilvusRetriever to push coverage over 85%.
 from __future__ import annotations
 
 from typing import Any
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from askme.retriever.base import HybridSearchParams, RetrievalResult, Document
+import pytest
+
+from askme.retriever.base import Document, HybridSearchParams, RetrievalResult
 from askme.retriever.milvus_retriever import MilvusRetriever
 
 
@@ -33,13 +33,29 @@ async def test_hybrid_search_rrf_native_error_fallback():
     # Force native path but make hybrid_search raise so it falls back
     with patch("askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", True):
         r.collection.hybrid_search.side_effect = RuntimeError("boom")
-        r.dense_search = AsyncMock(return_value=[
-            RetrievalResult(document=Document(id="d", content="", metadata={}), score=0.9, rank=1, retrieval_method="dense")
-        ])  # type: ignore
-        r.sparse_search = AsyncMock(return_value=[
-            RetrievalResult(document=Document(id="s", content="", metadata={}), score=0.8, rank=1, retrieval_method="sparse")
-        ])  # type: ignore
-        res = await r.hybrid_search([0.1], {0: 1.0}, HybridSearchParams(use_rrf=True, rrf_k=50, topk=2))
+        r.dense_search = AsyncMock(
+            return_value=[
+                RetrievalResult(
+                    document=Document(id="d", content="", metadata={}),
+                    score=0.9,
+                    rank=1,
+                    retrieval_method="dense",
+                )
+            ]
+        )  # type: ignore
+        r.sparse_search = AsyncMock(
+            return_value=[
+                RetrievalResult(
+                    document=Document(id="s", content="", metadata={}),
+                    score=0.8,
+                    rank=1,
+                    retrieval_method="sparse",
+                )
+            ]
+        )  # type: ignore
+        res = await r.hybrid_search(
+            [0.1], {0: 1.0}, HybridSearchParams(use_rrf=True, rrf_k=50, topk=2)
+        )
         assert res and any(x.retrieval_method.startswith("hybrid_rrf_") for x in res)
 
 
@@ -114,6 +130,8 @@ async def test_dense_sparse_and_hybrid_exceptions_propagate():
     with patch("askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", True):
         r.collection.hybrid_search.side_effect = RuntimeError("hs fail")
         # Patch fallback search to also raise to hit raise path
-        with patch.object(r, "_hybrid_search_rrf_fallback", side_effect=RuntimeError("fallback fail")):
+        with patch.object(
+            r, "_hybrid_search_rrf_fallback", side_effect=RuntimeError("fallback fail")
+        ):
             with pytest.raises(RuntimeError):
                 await r.hybrid_search([0.1], {0: 1.0}, HybridSearchParams(use_rrf=True))

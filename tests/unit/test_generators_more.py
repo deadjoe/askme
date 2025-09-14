@@ -50,7 +50,9 @@ async def test_ollama_fallback_on_error(monkeypatch: Any) -> None:
         return _Client()
 
     monkeypatch.setattr(LocalOllamaGenerator, "_client_get", _client_get, raising=False)
-    out = await gen.generate("q", [Passage(doc_id="d", title="t", content="c", score=1.0)])
+    out = await gen.generate(
+        "q", [Passage(doc_id="d", title="t", content="c", score=1.0)]
+    )
     assert "Answer (constructed" in out  # fell back to template
 
 
@@ -79,7 +81,8 @@ async def test_ollama_success(monkeypatch: Any) -> None:
         return self._client
 
     monkeypatch.setattr(LocalOllamaGenerator, "_client_get", _client_get, raising=False)
-    out = await gen.generate("q", [Passage(doc_id="d", title="t", content="c", score=1.0)])
+    out = await gen.generate(
+        "q", [Passage(doc_id="d", title="t", content="c", score=1.0)]
+    )
     assert out == "ok from ollama"
     await gen.cleanup()  # ensure no exceptions
-
