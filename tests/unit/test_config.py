@@ -106,7 +106,7 @@ class TestSettings:
     def test_default_settings(self):
         """Test default settings creation."""
         settings = Settings()
-        assert settings.vector_backend == "milvus"
+        assert settings.vector_backend == "weaviate"
         assert isinstance(settings.database, DatabaseConfig)
         assert isinstance(settings.embedding, EmbeddingConfig)
         assert isinstance(settings.hybrid, HybridConfig)
