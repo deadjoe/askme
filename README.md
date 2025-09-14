@@ -15,7 +15,7 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelli
 - **Hybrid Search**: Combines BM25/sparse and dense vector retrieval with configurable fusion methods (Alpha, RRF, relative scoring)
 - **Intelligent Reranking**: Local BGE-reranker-v2.5 with Cohere Rerank 3.5 fallback for optimal relevance scoring
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
-- **Multi-Backend Support**: Milvus 2.5+ (primary with sparse BM25), Weaviate, and Qdrant vector databases
+- **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
 - **Comprehensive Evaluation**: TruLens RAG Triad and Ragas v0.2+ metrics with A/B testing capabilities
 - **Production Ready**: FastAPI service with health checks, Docker deployment, monitoring, and extensive configuration
 
@@ -29,7 +29,7 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 ### Core Technologies
 
 - **Embeddings**: BGE-M3 multilingual model (dense + sparse support)
-- **Vector Database**: Milvus 2.5+ with native sparse BM25 (primary), Weaviate/Qdrant alternatives
+- **Vector Database**: Weaviate (primary), Milvus 2.5+/Qdrant alternatives with hybrid search support
 - **Reranking**: BAAI/bge-reranker-v2.5-gemma2-lightweight (local), Cohere Rerank 3.5 (cloud fallback)
 - **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
 - **Evaluation**: TruLens + Ragas frameworks with automated quality thresholds
@@ -53,8 +53,8 @@ cd askme
 # Install dependencies
 uv sync --dev
 
-# Start vector database (Milvus)
-docker compose -f docker/docker-compose.yaml up -d milvus
+# Start vector database (Weaviate)
+docker compose -f docker/docker-compose.yaml --profile weaviate up -d weaviate
 
 # Start API server (development mode)
 ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
@@ -82,7 +82,7 @@ Configuration is managed through `configs/askme.yaml` with environment variable 
 
 ```yaml
 # Vector backend selection
-vector_backend: milvus  # milvus | weaviate | qdrant
+vector_backend: weaviate  # weaviate | milvus | qdrant
 
 # Hybrid search configuration
 hybrid:

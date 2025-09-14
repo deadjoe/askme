@@ -6,7 +6,7 @@ AskMe is a production-ready hybrid RAG (Retrieval-Augmented Generation) system t
 - **Intelligent Reranking**: Local BGE-reranker-v2.5 + Cohere Rerank 3.5 fallback
 - **Query Enhancement**: HyDE and RAG-Fusion for improved recall
 - **Comprehensive Evaluation**: TruLens RAG Triad + Ragas metrics
-- **Multi-backend Support**: Milvus 2.5+ / Weaviate / Qdrant
+- **Multi-backend Support**: Weaviate (primary) / Milvus 2.5+ / Qdrant
 
 ## Architecture Flow
 ```
@@ -16,7 +16,7 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 
 ## Key Technologies
 - **Embeddings**: BGE-M3 (multilingual, sparse+dense)
-- **Vector DB**: Milvus 2.5+ with Sparse-BM25 support (primary)
+- **Vector DB**: Weaviate (primary) with hybrid search support
 - **Reranker**: BAAI/bge-reranker-v2.5-gemma2-lightweight (local)
 - **Fallback**: Cohere Rerank 3.5 (cloud, requires ASKME_ENABLE_COHERE=1)
 - **Evaluation**: TruLens + Ragas v0.2+
@@ -86,7 +86,7 @@ black askme/ && isort askme/
 
 ### Docker Deployment
 ```bash
-# Start full stack (Milvus + API)
+# Start full stack (Weaviate + API)
 docker-compose -f docker/docker-compose.yaml up -d
 
 # Health check
@@ -152,7 +152,7 @@ pytest askme/tests/e2e/ --slow
 ### Environment Variables
 ```bash
 # Required
-ASKME_VECTOR_BACKEND=milvus  # or weaviate, qdrant
+ASKME_VECTOR_BACKEND=weaviate  # or milvus, qdrant
 ASKME_EMBEDDING_MODEL=BAAI/bge-m3
 
 # Optional
