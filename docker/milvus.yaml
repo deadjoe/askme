@@ -1,0 +1,19 @@
+# Milvus Configuration for askme
+etcd:
+  endpoints:
+    - etcd:2379
+
+minio:
+  address: minio
+  port: 9000
+  accessKeyID: minioadmin
+  secretAccessKey: minioadmin
+  useSSL: false
+  bucketName: a-bucket
+
+log:
+  level: info
+
+common:
+  chanNamePrefix:
+    cluster: by-dev
