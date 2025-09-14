@@ -70,7 +70,7 @@ ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
 ./scripts/answer.sh "What is machine learning?"
 
 # Retrieve documents only (for debugging/tuning)
-./scripts/retrieve.sh "hybrid search techniques" --topk 25 --alpha 0.7
+./scripts/retrieve.sh "hybrid search techniques" --topk=25 --alpha=0.7
 
 # Run evaluation
 ./scripts/evaluate.sh --suite=baseline
@@ -321,22 +321,41 @@ uv run bandit -r askme
 
 ### Common Issues
 
-1. **Slow Retrieval Performance**
+1. **Milvus Container Startup Issues**
+   - If Milvus fails to start with port binding errors, try using Weaviate instead:
+     ```bash
+     docker run --name weaviate -p 8081:8080 -p 8082:50051 -d \
+       cr.weaviate.io/semitechnologies/weaviate:1.24.1 \
+       --host 0.0.0.0 --port 8080 --scheme http
+     ```
+   - Update `configs/askme.yaml` to use `vector_backend: weaviate`
+   - Ensure both HTTP (8081) and gRPC (8082) ports are exposed for Weaviate
+
+2. **Script Command Syntax**
+   - Use `--param=value` format for script parameters:
+     ```bash
+     # Correct
+     ./scripts/retrieve.sh "query" --topk=25 --alpha=0.7
+     # Incorrect
+     ./scripts/retrieve.sh "query" --topk 25 --alpha 0.7
+     ```
+
+3. **Slow Retrieval Performance**
    - Check hybrid search parameters (alpha, RRF vs alpha fusion)
    - Verify vector database connection and indexing
    - Monitor embedding service latency
 
-2. **Poor Reranking Quality**
+4. **Poor Reranking Quality**
    - Ensure local BGE-reranker model is properly loaded
    - Check Cohere API key and fallback configuration
    - Verify reranking score thresholds
 
-3. **Memory Issues**
+5. **Memory Issues**
    - Adjust batch sizes in `configs/askme.yaml`
    - Use `ASKME_SKIP_HEAVY_INIT=1` for development
    - Monitor model memory usage (BGE-M3 + reranker)
 
-4. **Evaluation Failures**
+6. **Evaluation Failures**
    - Check TruLens and Ragas library versions
    - Verify evaluation dataset format (JSONL with required fields)
    - Ensure OpenAI-compatible API access for evaluation LLM
