@@ -32,7 +32,7 @@ class DatabaseConfig(BaseSettings):
         collection_name: str = "askme_hybrid"
 
     class WeaviateConfig(BaseSettings):
-        url: str = "http://localhost:8080"
+        url: str = "http://localhost:8081"
         api_key: str = ""
         class_name: str = "AskmeDocument"
 
@@ -316,7 +316,7 @@ class Settings(BaseSettings):
     """Main application settings."""
 
     # Vector backend selection
-    vector_backend: str = Field(default="milvus")
+    vector_backend: str = Field(default="weaviate")
 
     # Component configurations
     database: DatabaseConfig = DatabaseConfig()
@@ -339,18 +339,32 @@ class Settings(BaseSettings):
 
     # Pydantic v2 style settings config
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        env_prefix="ASKME_",
     )
 
     @classmethod
     def from_yaml(cls, config_path: str = "configs/askme.yaml") -> "Settings":
-        """Load settings from YAML file."""
+        """Load settings from YAML file with environment variable overrides."""
+        import os
+
         config_file = Path(config_path)
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
-                config_data = yaml.safe_load(f)
-            return cls(**config_data)
-        return cls()
+                config_data = yaml.safe_load(f) or {}
+        else:
+            config_data = {}
+
+        # Override with environment variables manually since passing **kwargs
+        # to __init__ prevents Pydantic from checking environment
+        for key in config_data.keys():
+            env_key = f"ASKME_{key.upper()}"
+            if env_key in os.environ:
+                config_data[key] = os.environ[env_key]
+
+        return cls(**config_data)
 
 
 @lru_cache()
