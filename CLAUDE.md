@@ -189,7 +189,7 @@ Before committing:
 4. Basic evaluation: `scripts/evaluate.sh --quick`
 
 ## Contributing
-- Commit messages: Professional, concise, English
+- Commit messages: Professional and must follow the standard of Conventional Commits rules, concise, English
 - Don't include Cluade as co-author in new commit and keep checking the previous commited and pushed commits to prevent Claude as the Co-author
 - Documentation: Technical accuracy, open-source ready
 - Code comments: English, focused on "why" not "what"
