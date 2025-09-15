@@ -4,6 +4,7 @@ BGE-M3 embedding service with sparse and dense vector generation.
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -37,6 +38,11 @@ class BGEEmbeddingService:
             "cuda" if (hasattr(torch, "cuda") and torch.cuda.is_available()) else "cpu"
         )
         self._is_initialized = False
+        # Thread pool for CPU-intensive embedding operations
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,  # BGE models don't support true multithreading
+            thread_name_prefix="bge-embed",
+        )
 
     async def initialize(self) -> None:
         """Initialize the BGE-M3 model."""
@@ -94,16 +100,17 @@ class BGEEmbeddingService:
                     f"Processing batch {i//batch_size + 1}: {len(batch_texts)} texts"
                 )
 
-                # Encode batch with BGE-M3
+                # Encode batch with BGE-M3 in thread pool to avoid blocking
                 if self.model is None:
                     raise RuntimeError("Embedding model not initialized")
-                batch_results = self.model.encode(
+
+                loop = asyncio.get_event_loop()
+                batch_results = await loop.run_in_executor(
+                    self._executor,
+                    self._encode_batch_sync,
                     batch_texts,
-                    batch_size=len(batch_texts),
-                    max_length=self.config.max_length,
-                    return_dense=True,
-                    return_sparse=True,
-                    return_colbert_vecs=False,  # Skip ColBERT vectors for now
+                    len(batch_texts),
+                    self.config.max_length,
                 )
 
                 # Process results
@@ -136,6 +143,19 @@ class BGEEmbeddingService:
             logger.error(f"Failed to encode documents: {e}")
             raise
 
+    def _encode_batch_sync(
+        self, texts: List[str], batch_size: int, max_length: int
+    ) -> Dict[str, Any]:
+        """Synchronous batch encoding for thread pool execution."""
+        return self.model.encode(
+            texts,
+            batch_size=batch_size,
+            max_length=max_length,
+            return_dense=True,
+            return_sparse=True,
+            return_colbert_vecs=False,
+        )
+
     async def get_dense_embedding(self, text: str) -> List[float]:
         """Return a single dense embedding for the given text."""
         if not self._is_initialized:
@@ -144,13 +164,14 @@ class BGEEmbeddingService:
         try:
             if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            result = self.model.encode(
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                self._executor,
+                self._encode_batch_sync,
                 [text],
-                batch_size=1,
-                max_length=self.config.max_length,
-                return_dense=True,
-                return_sparse=False,
-                return_colbert_vecs=False,
+                1,
+                self.config.max_length,
             )
             vec = result.get("dense_vecs")
             if vec is None:
@@ -183,13 +204,18 @@ class BGEEmbeddingService:
         try:
             if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            result = self.model.encode(
-                [text],
-                batch_size=1,
-                max_length=self.config.max_length,
-                return_dense=False,
-                return_sparse=True,
-                return_colbert_vecs=False,
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                self._executor,
+                lambda: self.model.encode(
+                    [text],
+                    batch_size=1,
+                    max_length=self.config.max_length,
+                    return_dense=False,
+                    return_sparse=True,
+                    return_colbert_vecs=False,
+                ),
             )
 
             # Support multiple return shapes used in tests and real model
@@ -230,16 +256,21 @@ class BGEEmbeddingService:
             else:
                 query_text = query
 
-            # Encode query
+            # Encode query in thread pool
             if self.model is None:
                 raise RuntimeError("Embedding model not initialized")
-            results = self.model.encode(
-                [query_text],
-                batch_size=1,
-                max_length=self.config.max_length,
-                return_dense=True,
-                return_sparse=True,
-                return_colbert_vecs=False,
+
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(
+                self._executor,
+                lambda: self.model.encode(
+                    [query_text],
+                    batch_size=1,
+                    max_length=self.config.max_length,
+                    return_dense=True,
+                    return_sparse=True,
+                    return_colbert_vecs=False,
+                ),
             )
 
             dense_embedding = results.get("dense_vecs")[0]
@@ -377,14 +408,38 @@ class BGEEmbeddingService:
 
     async def cleanup(self) -> None:
         """Clean up model resources."""
-        if self.model is not None:
-            # Clear CUDA cache if using GPU
-            if hasattr(torch, "cuda") and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        try:
+            if self.model is not None:
+                # Clear CUDA cache if using GPU
+                if hasattr(torch, "cuda") and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-            self.model = None
-            self._is_initialized = False
+                self.model = None
+                self._is_initialized = False
+
+            # Shutdown thread pool with timeout
+            if hasattr(self, "_executor"):
+                logger.info("Shutting down BGE embedding thread pool...")
+                # Don't wait indefinitely
+                self._executor.shutdown(wait=False)
+
+                # Give it a moment to shutdown gracefully
+                import time
+
+                start_time = time.time()
+                while not self._executor._shutdown and (time.time() - start_time) < 2.0:
+                    await asyncio.sleep(0.1)  # Use async sleep in async context
+
+                if not self._executor._shutdown:
+                    logger.warning(
+                        "BGE embedding thread pool did not shutdown gracefully"
+                    )
+
             logger.info("BGE embedding service cleaned up")
+
+        except Exception as e:
+            logger.warning(f"Error during BGE embedding service cleanup: {e}")
+            # Don't re-raise to avoid blocking shutdown
 
 
 class EmbeddingManager:

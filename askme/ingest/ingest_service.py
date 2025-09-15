@@ -5,6 +5,7 @@ Document ingestion service connecting processing pipeline with vector database.
 import asyncio
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -87,6 +88,16 @@ class IngestionService:
         # Task tracking
         self._tasks: Dict[str, IngestionTask] = {}
         self._running_tasks: Dict[str, asyncio.Task] = {}
+
+        # Thread pool for CPU-intensive operations
+        self._executor = ThreadPoolExecutor(
+            max_workers=(
+                settings.performance.ingestion.max_workers
+                if hasattr(settings.performance, "ingestion")
+                else 2
+            ),
+            thread_name_prefix="askme-ingest",
+        )
 
     async def initialize(self) -> None:
         """Initialize the ingestion service."""
@@ -240,15 +251,16 @@ class IngestionService:
             task.status = TaskStatus.PROCESSING
             task.started_at = datetime.utcnow()
 
-            # Process the file
-            documents = await self.processing_pipeline.process_file(
-                file_path, metadata, tags
+            # Process the file in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            documents = await loop.run_in_executor(
+                self._executor, self._process_file_sync, file_path, metadata, tags
             )
 
             task.total_chunks = len(documents)
 
-            # Generate embeddings and ingest
-            await self._ingest_documents(task, documents, overwrite)
+            # Generate embeddings and ingest with yield points
+            await self._ingest_documents_non_blocking(task, documents, overwrite)
 
             # Mark as completed
             task.status = TaskStatus.COMPLETED
@@ -270,6 +282,50 @@ class IngestionService:
             if task.task_id in self._running_tasks:
                 del self._running_tasks[task.task_id]
 
+    def _process_file_sync(
+        self,
+        file_path: Path,
+        metadata: Optional[Dict[str, Any]],
+        tags: Optional[List[str]],
+    ) -> List[Document]:
+        """Synchronous wrapper for file processing to run in thread pool."""
+        import asyncio
+
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            return loop.run_until_complete(
+                self.processing_pipeline.process_file(file_path, metadata, tags)
+            )
+        finally:
+            loop.close()
+
+    def _process_directory_sync(
+        self,
+        dir_path: Path,
+        recursive: bool,
+        metadata: Optional[Dict[str, Any]],
+        tags: Optional[List[str]],
+        file_patterns: List[str],
+    ) -> List[Document]:
+        """Synchronous wrapper for directory processing to run in thread pool."""
+        import asyncio
+
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            return loop.run_until_complete(
+                self.processing_pipeline.process_directory(
+                    dir_path, recursive, metadata, tags, file_patterns
+                )
+            )
+        finally:
+            loop.close()
+
     async def _process_directory_task(
         self,
         task: IngestionTask,
@@ -285,9 +341,16 @@ class IngestionService:
             task.status = TaskStatus.PROCESSING
             task.started_at = datetime.utcnow()
 
-            # Process the directory
-            documents = await self.processing_pipeline.process_directory(
-                dir_path, recursive, metadata, tags, file_patterns
+            # Process the directory in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            documents = await loop.run_in_executor(
+                self._executor,
+                self._process_directory_sync,
+                dir_path,
+                recursive,
+                metadata,
+                tags,
+                file_patterns,
             )
 
             task.total_chunks = len(documents)
@@ -300,8 +363,8 @@ class IngestionService:
 
             task.processed_files = len(files_processed)
 
-            # Generate embeddings and ingest
-            await self._ingest_documents(task, documents, overwrite)
+            # Generate embeddings and ingest with yield points
+            await self._ingest_documents_non_blocking(task, documents, overwrite)
 
             # Mark as completed
             task.status = TaskStatus.COMPLETED
@@ -327,13 +390,19 @@ class IngestionService:
         self, task: IngestionTask, documents: List[Document], overwrite: bool
     ) -> None:
         """Ingest processed documents into the vector database."""
+        await self._ingest_documents_non_blocking(task, documents, overwrite)
+
+    async def _ingest_documents_non_blocking(
+        self, task: IngestionTask, documents: List[Document], overwrite: bool
+    ) -> None:
+        """Ingest processed documents with yield points to keep API responsive."""
         if not documents:
             logger.warning("No documents to ingest")
             return
 
         batch_size = self.settings.performance.batch.embedding_batch_size
 
-        # Process in batches
+        # Process in batches with yield points
         for i in range(0, len(documents), batch_size):
             batch = documents[i : i + batch_size]
             batch_texts = [doc.content for doc in batch]
@@ -376,6 +445,9 @@ class IngestionService:
             except Exception as e:
                 logger.error(f"Failed to insert document batch: {e}")
                 raise
+
+            # Yield control to event loop after each batch to keep API responsive
+            await asyncio.sleep(0)
 
     async def get_task_status(self, task_id: str) -> Optional[IngestionTask]:
         """Get the status of an ingestion task."""
@@ -466,26 +538,73 @@ class IngestionService:
         return cleaned_count
 
     async def shutdown(self) -> None:
-        """Shutdown the ingestion service."""
+        """Shutdown the ingestion service gracefully with timeout."""
         try:
+            logger.info("Starting ingestion service shutdown...")
+
             # Cancel all running tasks
             for task_id in list(self._running_tasks.keys()):
                 await self.cancel_task(task_id)
 
-            # Wait for tasks to complete
+            # Wait for tasks to complete with timeout
             if self._running_tasks:
-                await asyncio.gather(
-                    *self._running_tasks.values(), return_exceptions=True
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *self._running_tasks.values(), return_exceptions=True
+                        ),
+                        timeout=5.0,  # 5 second timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Some ingestion tasks did not complete within timeout, forcing shutdown"
+                    )
+
+            # Forceful shutdown of thread pool with timeout
+            logger.info("Shutting down thread pool...")
+            # Don't wait indefinitely
+            self._executor.shutdown(wait=False)
+
+            # Give it a moment to shutdown gracefully
+            import time
+
+            start_time = time.time()
+            while not self._executor._shutdown and (time.time() - start_time) < 2.0:
+                time.sleep(0.1)
+
+            # Force termination if still running
+            if not self._executor._shutdown:
+                logger.warning(
+                    "Thread pool did not shutdown gracefully, forcing termination"
                 )
+                try:
+                    # Try to terminate threads if possible
+                    for thread in self._executor._threads:
+                        if thread.is_alive():
+                            logger.warning(f"Force stopping thread: {thread.name}")
+                except Exception as e:
+                    logger.debug(f"Could not force stop threads: {e}")
 
-            # Cleanup embedding service
-            await self.embedding_manager.embedding_service.cleanup()
+            # Cleanup embedding service (with its own timeout)
+            try:
+                await asyncio.wait_for(
+                    self.embedding_manager.embedding_service.cleanup(), timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Embedding service cleanup timed out")
+            except Exception as e:
+                logger.warning(f"Error cleaning up embedding service: {e}")
 
-            # Disconnect from vector database
-            await self.vector_retriever.disconnect()
+            # Disconnect from vector database (with timeout)
+            try:
+                await asyncio.wait_for(self.vector_retriever.disconnect(), timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning("Vector database disconnect timed out")
+            except Exception as e:
+                logger.warning(f"Error disconnecting from vector database: {e}")
 
             logger.info("Ingestion service shutdown completed")
 
         except Exception as e:
             logger.error(f"Error during ingestion service shutdown: {e}")
-            raise
+            # Don't re-raise to avoid blocking the shutdown process

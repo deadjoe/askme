@@ -4,6 +4,8 @@ FastAPI application for askme hybrid RAG system.
 
 import logging
 import os
+import signal
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -196,8 +198,24 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown."""
+
+    def signal_handler(signum, frame):
+        logger = logging.getLogger(__name__)
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        # FastAPI's lifespan will handle the cleanup
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+
 if __name__ == "__main__":
     import uvicorn
+
+    # Setup signal handlers for graceful shutdown
+    setup_signal_handlers()
 
     settings = get_settings()
     uvicorn.run(
