@@ -74,61 +74,72 @@ class PDFProcessor(DocumentProcessor):
         self, file_path: Path, metadata: Optional[Dict[str, Any]] = None
     ) -> ProcessedDocument:
         """Process PDF document."""
+        import asyncio
+
         try:
-            with open(file_path, "rb") as file:
-                pdf_reader = pypdf.PdfReader(file)
+            # Use thread pool for file I/O and PDF parsing
+            loop = asyncio.get_event_loop()
+            pdf_content = await loop.run_in_executor(
+                None, self._process_pdf_sync, file_path
+            )
+            full_text, pdf_info, page_count = pdf_content
 
-                # Extract text from all pages
-                full_text = ""
-                page_texts = []
+            doc_metadata = {
+                "source_type": "pdf",
+                "file_path": str(file_path),
+                "file_size": file_path.stat().st_size,
+                "page_count": page_count,
+                "created_at": datetime.now().isoformat(),
+                "pdf_title": pdf_info.get("/Title", ""),
+                "pdf_author": pdf_info.get("/Author", ""),
+                "pdf_subject": pdf_info.get("/Subject", ""),
+                "pdf_creator": pdf_info.get("/Creator", ""),
+                **(metadata or {}),
+            }
 
-                for page_num, page in enumerate(pdf_reader.pages):
-                    page_text = page.extract_text()
-                    page_texts.append(page_text)
-                    full_text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+            # Determine title
+            title = (
+                doc_metadata.get("title") or pdf_info.get("/Title") or file_path.stem
+            )
 
-                # Extract PDF metadata
-                pdf_info = pdf_reader.metadata if pdf_reader.metadata else {}
+            processing_stats = {
+                "processor": "PDFProcessor",
+                "pages_processed": page_count,
+                "total_characters": len(full_text),
+                "processing_time": datetime.now().isoformat(),
+            }
 
-                doc_metadata = {
-                    "source_type": "pdf",
-                    "file_path": str(file_path),
-                    "file_size": file_path.stat().st_size,
-                    "page_count": len(pdf_reader.pages),
-                    "created_at": datetime.now().isoformat(),
-                    "pdf_title": pdf_info.get("/Title", ""),
-                    "pdf_author": pdf_info.get("/Author", ""),
-                    "pdf_subject": pdf_info.get("/Subject", ""),
-                    "pdf_creator": pdf_info.get("/Creator", ""),
-                    **(metadata or {}),
-                }
-
-                # Determine title
-                title = (
-                    doc_metadata.get("title")
-                    or pdf_info.get("/Title")
-                    or file_path.stem
-                )
-
-                processing_stats = {
-                    "processor": "PDFProcessor",
-                    "pages_processed": len(pdf_reader.pages),
-                    "total_characters": len(full_text),
-                    "processing_time": datetime.now().isoformat(),
-                }
-
-                return ProcessedDocument(
-                    source_path=str(file_path),
-                    title=title,
-                    content=full_text.strip(),
-                    chunks=[],  # Will be populated by chunker
-                    metadata=doc_metadata,
-                    processing_stats=processing_stats,
-                )
+            return ProcessedDocument(
+                source_path=str(file_path),
+                title=title,
+                content=full_text.strip(),
+                chunks=[],  # Will be populated by chunker
+                metadata=doc_metadata,
+                processing_stats=processing_stats,
+            )
 
         except Exception as e:
             logger.error(f"Failed to process PDF {file_path}: {e}")
             raise
+
+    def _process_pdf_sync(self, file_path: Path) -> tuple:
+        """Synchronous PDF processing for thread pool execution."""
+        with open(file_path, "rb") as file:
+            pdf_reader = pypdf.PdfReader(file)
+
+            # Extract text from all pages
+            full_text = ""
+            page_texts = []
+
+            for page_num, page in enumerate(pdf_reader.pages):
+                page_text = page.extract_text()
+                page_texts.append(page_text)
+                full_text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+
+            # Extract PDF metadata
+            pdf_info = pdf_reader.metadata if pdf_reader.metadata else {}
+
+            return full_text, pdf_info, len(pdf_reader.pages)
 
 
 class MarkdownProcessor(DocumentProcessor):
