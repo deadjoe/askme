@@ -166,30 +166,36 @@ _merge_overrides_json() {
         return
     fi
 
-    local parts=()
+    local hybrid_fields=""
+    local rerank_fields=""
+
     if [[ -n "$OVR_ALPHA" ]]; then
-        parts+=( "\"hybrid\":{\"alpha\":$OVR_ALPHA}" )
+        hybrid_fields+="\"alpha\":$OVR_ALPHA"
     fi
     if [[ -n "$OVR_TOPK" ]]; then
-        parts+=( "\"hybrid\":{\"topk\":$OVR_TOPK}" )
+        if [[ -n "$hybrid_fields" ]]; then
+            hybrid_fields+=",";
+        fi
+        hybrid_fields+="\"topk\":$OVR_TOPK"
     fi
     if [[ -n "$OVR_TOPN" ]]; then
-        parts+=( "\"rerank\":{\"top_n\":$OVR_TOPN}" )
+        rerank_fields+="\"top_n\":$OVR_TOPN"
     fi
 
-    if [[ ${#parts[@]} -eq 0 ]]; then
+    if [[ -z "$hybrid_fields" && -z "$rerank_fields" ]]; then
         echo "null"
         return
     fi
 
-    # Merge shallowly: duplicate keys last one wins (hybrid may appear twice)
     local json="{"
-    for i in "${!parts[@]}"; do
-        json+="${parts[$i]}"
-        if [[ $i -lt $(( ${#parts[@]} - 1 )) ]]; then
-            json+=",";
-        fi
-    done
+    local sep=""
+    if [[ -n "$hybrid_fields" ]]; then
+        json+="\"hybrid\":{${hybrid_fields}}"
+        sep=",";
+    fi
+    if [[ -n "$rerank_fields" ]]; then
+        json+="${sep}\"rerank\":{${rerank_fields}}"
+    fi
     json+="}"
     echo "$json"
 }

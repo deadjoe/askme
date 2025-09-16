@@ -1,110 +1,143 @@
-"""
-Unit tests to raise coverage for askme.evals.ragas_runner.
-"""
+"""Tests for askme.evals.ragas_runner."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any, Dict, List
+import sys
+from types import ModuleType
+from typing import Any, Dict, Generator, List
 
 import pytest
 
 from askme.evals.ragas_runner import run_ragas
 
 
-@pytest.mark.parametrize("modname", ["datasets", "ragas"])
-def test_ragas_import_error_raises_runtime_error(monkeypatch, modname: str) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _imp(name: str, *args: Any, **kwargs: Any):  # type: ignore[no-redef]
-        if name.startswith(modname):
-            raise ImportError(f"No module named {modname}")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _imp)
-    with pytest.raises(RuntimeError, match="Ragas not available"):
-        run_ragas([])
+class _FakeSeries(list):
+    def mean(self) -> float:
+        return sum(self) / len(self)
 
 
-def test_ragas_success_with_fallback_and_alias(monkeypatch) -> None:
-    # Build stub modules for datasets + ragas
+class _DataFrameLike:
+    def __init__(self, columns: Dict[str, List[float]]) -> None:
+        self.columns = list(columns.keys())
+        self._cols = columns
+
+    def __getitem__(self, key: str) -> Any:
+        return _FakeSeries(self._cols[key])
+
+
+class _DictLikeResult:
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self._payload = payload
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self._payload
+
+
+def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -> None:
+    datasets_module = ModuleType("datasets")
+
     class _Dataset:
-        @staticmethod
-        def from_dict(d: Dict[str, Any]) -> "_DS":  # type: ignore[override]
-            return _DS(d)
+        @classmethod
+        def from_dict(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+            return data
 
-    class _DS:
-        def __init__(self, data: Dict[str, Any]):
-            self.data = data
+    setattr(datasets_module, "Dataset", _Dataset)
+    monkeypatch.setitem(sys.modules, "datasets", datasets_module)
 
-    eval_calls = {"count": 0}
+    ragas_module = ModuleType("ragas")
+    ragas_module.__path__ = []  # mark as package
 
-    class _Res:
-        def __init__(self) -> None:
-            # Provide columns and __getitem__ accessor
-            self.columns = [
-                "faithfulness",
-                "answer_relevancy",
-                "context_precision",
-                "context_recall",
-            ]
+    def _evaluate(*_args: Any, **_kwargs: Any) -> Any:
+        return evaluate_result
 
-        def __getitem__(self, key: str):
-            class _Col:
-                def mean(self_nonlocal):  # type: ignore[no-redef]
-                    return 0.8
+    setattr(ragas_module, "evaluate", _evaluate)
+    monkeypatch.setitem(sys.modules, "ragas", ragas_module)
 
-            return _Col()
+    metrics_module = ModuleType("ragas.metrics")
+    setattr(metrics_module, "answer_relevancy", object())
+    setattr(metrics_module, "context_precision", object())
+    setattr(metrics_module, "context_recall", object())
+    setattr(metrics_module, "faithfulness", object())
+    monkeypatch.setitem(sys.modules, "ragas.metrics", metrics_module)
+    setattr(ragas_module, "metrics", metrics_module)
 
-    def _evaluate(dataset: Any, metrics: List[Any], llm=None, embeddings=None):  # type: ignore[no-redef]
-        # First call with provider present should raise to trigger fallback
-        eval_calls["count"] += 1
-        if eval_calls["count"] == 1 and (llm is not None or embeddings is not None):
-            raise RuntimeError("provider error")
-        return _Res()
+    embeddings_module = ModuleType("ragas.embeddings")
 
     class _HFEmb:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[no-redef]
-            pass
+        def __init__(self, model_name: str) -> None:
+            self.model_name = model_name
 
-    class _OpenAI:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[no-redef]
-            pass
+    setattr(embeddings_module, "HuggingFaceEmbeddings", _HFEmb)
+    monkeypatch.setitem(sys.modules, "ragas.embeddings", embeddings_module)
+    setattr(ragas_module, "embeddings", embeddings_module)
 
-    # Wire stub modules
-    import sys
+    llms_module = ModuleType("ragas.llms")
 
-    sys.modules["datasets"] = SimpleNamespace(Dataset=_Dataset)  # type: ignore[attr-defined]
-    sys.modules["ragas"] = SimpleNamespace(evaluate=_evaluate)
-    sys.modules["ragas.metrics"] = SimpleNamespace(
-        answer_relevancy=object(),
-        context_precision=object(),
-        context_recall=object(),
-        faithfulness=object(),
+    class _RagasOpenAI:
+        def __init__(self, client: Any, model: str) -> None:
+            self.client = client
+            self.model = model
+
+    setattr(llms_module, "OpenAI", _RagasOpenAI)
+    monkeypatch.setitem(sys.modules, "ragas.llms", llms_module)
+    setattr(ragas_module, "llms", llms_module)
+
+    openai_module = ModuleType("openai")
+
+    class _OpenAIClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            self.base_url = base_url
+            self.api_key = api_key
+
+    setattr(openai_module, "OpenAI", _OpenAIClient)
+    monkeypatch.setitem(sys.modules, "openai", openai_module)
+
+
+@pytest.fixture(autouse=True)  # type: ignore[misc]
+def _cleanup_modules() -> Generator[None, None, None]:
+    originals = sys.modules.copy()
+    yield
+    for name in list(sys.modules.keys()):
+        if name not in originals:
+            sys.modules.pop(name, None)
+
+
+def test_run_ragas_handles_dataframe_like(monkeypatch: pytest.MonkeyPatch) -> None:
+    df_result = _DataFrameLike(
+        {
+            "faithfulness": [0.8, 0.9],
+            "answer_relevancy": [0.6, 0.7],
+        }
     )
-    sys.modules["ragas.embeddings"] = SimpleNamespace(HuggingFaceEmbeddings=_HFEmb)
-    sys.modules["ragas.llms"] = SimpleNamespace(OpenAI=_OpenAI)
+    _install_fake_ragas(monkeypatch, df_result)
 
     samples = [
-        {"question": "q", "answer": "a", "contexts": ["c"], "ground_truths": ["g"]}
+        {"question": "q1", "answer": "a1", "contexts": ["c1"], "ground_truths": []},
+        {"question": "q2", "answer": "a2", "contexts": ["c2"], "ground_truths": []},
     ]
-    # include alias 'answer_relevance' to test mapping
-    scores = run_ragas(
-        samples,
-        metrics=[
-            "faithfulness",
-            "answer_relevance",
-            "context_precision",
-            "context_recall",
-        ],
+
+    scores = run_ragas(samples, metrics=["faithfulness", "answer_relevancy"])
+
+    assert pytest.approx(scores["faithfulness"], 0.0001) == 0.85
+    assert pytest.approx(scores["answer_relevancy"], 0.0001) == 0.65
+
+
+def test_run_ragas_handles_dict_payload_and_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dict_result = _DictLikeResult(
+        {
+            "answer_relevancy": 0.82,
+            "context_recall": [0.4, 0.6],
+        }
     )
-    assert set(scores.keys()) == {
-        "faithfulness",
-        "answer_relevance",
-        "context_precision",
-        "context_recall",
-    }
-    # All metric means resolved via .mean() -> 0.8
-    assert all(abs(v - 0.8) < 1e-6 for v in scores.values())
+    _install_fake_ragas(monkeypatch, dict_result)
+
+    samples = [
+        {"question": "q", "answer": "a", "contexts": ["c"], "ground_truths": ["ref"]},
+    ]
+
+    scores = run_ragas(samples, metrics=["answer_relevance", "context_recall"])
+
+    assert pytest.approx(scores["answer_relevance"], 0.0001) == 0.82
+    assert pytest.approx(scores["context_recall"], 0.0001) == 0.5

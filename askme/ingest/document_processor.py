@@ -283,8 +283,16 @@ class TextProcessor(DocumentProcessor):
     ) -> ProcessedDocument:
         """Process plain text document."""
         try:
-            # Try different encodings
-            encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252"]
+            # Try common encodings; prioritize Chinese encodings before latin-1
+            encodings = [
+                "utf-8",
+                "utf-8-sig",
+                "gb18030",  # superset of GBK/GB2312, safe default for zh text
+                "gbk",
+                "big5",
+                "latin-1",
+                "cp1252",
+            ]
             content = None
             used_encoding = None
 
