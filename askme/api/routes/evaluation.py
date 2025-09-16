@@ -2,10 +2,11 @@
 Evaluation and metrics endpoints.
 """
 
+import math
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -18,6 +19,16 @@ from askme.evals.storage import list_runs as storage_list_runs
 from askme.evals.storage import load_run as storage_load_run
 from askme.evals.storage import save_run as storage_save_run
 from askme.evals.trulens_runner import run_trulens
+
+TRULENS_METRICS = {"context_relevance", "groundedness", "answer_relevance"}
+RAGAS_METRICS = {
+    "faithfulness",
+    "answer_relevancy",
+    "answer_relevance",
+    "context_precision",
+    "context_recall",
+}
+REFERENCE_REQUIRED_METRICS = {"context_recall"}
 
 
 class EvalSuite(str, Enum):
@@ -157,6 +168,8 @@ async def run_evaluation(
 
     import uuid
 
+    requested_metric_names: Optional[Set[str]] = None
+
     # Validate metrics
     if req.metrics:
         available_metrics = set(MetricType)
@@ -166,8 +179,22 @@ async def run_evaluation(
             raise HTTPException(
                 status_code=400, detail=f"Invalid metrics: {list(invalid_metrics)}"
             )
+        requested_metric_names = {
+            m.value if isinstance(m, MetricType) else str(m) for m in req.metrics
+        }
 
     run_id = str(uuid.uuid4())
+
+    trulens_metric_filter: Optional[Set[str]] = (
+        None
+        if requested_metric_names is None
+        else requested_metric_names & TRULENS_METRICS
+    )
+    ragas_metric_filter: Optional[List[str]] = (
+        None
+        if requested_metric_names is None
+        else [m for m in requested_metric_names if m in RAGAS_METRICS]
+    )
 
     # Apply config overrides to enable parameter sweeps (alpha/topk/top_n etc.)
     def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -282,13 +309,43 @@ async def run_evaluation(
             for _ in range(request_samples)
         ]
 
+    references_present = any(bool(r.get("ground_truths")) for r in sample_rows)
     overall_metrics: List[MetricResult] = []
+    skipped_due_to_reference: Set[str] = set()
+
+    effective_ragas_metrics: List[str] = []
+    if settings.evaluation.ragas.enabled:
+        if ragas_metric_filter is None:
+            effective_ragas_metrics = list(settings.evaluation.ragas.metrics)
+        else:
+            effective_ragas_metrics = list(ragas_metric_filter)
+
+    if not references_present and effective_ragas_metrics:
+        removed_metrics = [
+            m for m in effective_ragas_metrics if m in REFERENCE_REQUIRED_METRICS
+        ]
+        if removed_metrics:
+            skipped_due_to_reference.update(removed_metrics)
+            effective_ragas_metrics = [
+                m
+                for m in effective_ragas_metrics
+                if m not in REFERENCE_REQUIRED_METRICS
+            ]
 
     # Try TruLens first if enabled
-    if settings.evaluation.trulens.enabled:
+    trulens_available = settings.evaluation.trulens.enabled
+    if trulens_available and trulens_metric_filter is not None:
+        trulens_available = len(trulens_metric_filter) > 0
+
+    if trulens_available:
         try:
             tl_scores = run_trulens(sample_rows)
             for name, value in tl_scores.items():
+                if (
+                    trulens_metric_filter is not None
+                    and name not in trulens_metric_filter
+                ):
+                    continue
                 # thresholds for triad can reuse trulens_min
                 threshold = (
                     settings.evaluation.thresholds.trulens_min
@@ -309,69 +366,106 @@ async def run_evaluation(
             pass
 
     # Try real Ragas evaluation
-    try:
-        metric_names = [m.value for m in req.metrics] if req.metrics else None
-        ragas_scores = run_ragas(sample_rows, metrics=metric_names)
+    if settings.evaluation.ragas.enabled and effective_ragas_metrics:
+        try:
+            ragas_scores = run_ragas(sample_rows, metrics=effective_ragas_metrics)
 
-        # Map scores to response with thresholds
-        for name, value in ragas_scores.items():
-            threshold = None
-            if name == "faithfulness":
-                threshold = settings.evaluation.thresholds.ragas_faithfulness_min
-            elif name == "context_precision":
-                threshold = settings.evaluation.thresholds.ragas_precision_min
-            overall_metrics.append(
-                MetricResult(
-                    name=name,
-                    value=value,
-                    threshold=threshold,
-                    passed=(value >= threshold) if threshold is not None else True,
-                    details={"samples": request_samples},
+            # Map scores to response with thresholds
+            for name, value in ragas_scores.items():
+                sanitized_value = value
+                value_details: Dict[str, Any] = {"samples": request_samples}
+                if isinstance(sanitized_value, float) and not math.isfinite(
+                    sanitized_value
+                ):
+                    value_details["note"] = "non_finite_value"
+                    sanitized_value = 0.0
+                threshold = None
+                if name == "faithfulness":
+                    threshold = settings.evaluation.thresholds.ragas_faithfulness_min
+                elif name == "context_precision":
+                    threshold = settings.evaluation.thresholds.ragas_precision_min
+                overall_metrics.append(
+                    MetricResult(
+                        name=name,
+                        value=sanitized_value,
+                        threshold=threshold,
+                        passed=(value >= threshold) if threshold is not None else True,
+                        details=value_details,
+                    )
                 )
+
+        except Exception as e:
+            # Fall back to heuristic evaluator if ragas unavailable
+            from typing import cast
+
+            evaluator = Evaluator(settings.evaluation)
+            heuristic_scores = evaluator.evaluate_batch(
+                [
+                    EvalItem(
+                        query=cast(str, r["question"]),
+                        answer=cast(str, r["answer"]),
+                        contexts=cast(List[str], r["contexts"]),
+                        ground_truth=(
+                            cast(List[str], r.get("ground_truths", []))[0]
+                            if r.get("ground_truths")
+                            else None
+                        ),
+                    )
+                    for r in sample_rows
+                ]
             )
-
-    except Exception as e:
-        # Fall back to heuristic evaluator if ragas unavailable
-        from typing import cast
-
-        evaluator = Evaluator(settings.evaluation)
-        heuristic_scores = evaluator.evaluate_batch(
-            [
-                EvalItem(
-                    query=cast(str, r["question"]),
-                    answer=cast(str, r["answer"]),
-                    contexts=cast(List[str], r["contexts"]),
-                    ground_truth=(
-                        cast(List[str], r.get("ground_truths", []))[0]
-                        if r.get("ground_truths")
-                        else None
-                    ),
+            for s in heuristic_scores:
+                overall_metrics.append(
+                    MetricResult(
+                        name=s.name,
+                        value=s.value,
+                        threshold=s.threshold,
+                        passed=(
+                            (s.value >= s.threshold)
+                            if s.threshold is not None
+                            else True
+                        ),
+                        details={
+                            "samples": request_samples,
+                            "note": "heuristic_fallback",
+                            "error": str(e),
+                        },
+                    )
                 )
-                for r in sample_rows
-            ]
-        )
-        for s in heuristic_scores:
-            overall_metrics.append(
-                MetricResult(
-                    name=s.name,
-                    value=s.value,
-                    threshold=s.threshold,
-                    passed=(
-                        (s.value >= s.threshold) if s.threshold is not None else True
-                    ),
-                    details={
-                        "samples": request_samples,
-                        "note": "heuristic_fallback",
-                        "error": str(e),
-                    },
-                )
-            )
+    elif settings.evaluation.ragas.enabled and not effective_ragas_metrics:
+        if ragas_metric_filter:
+            skipped_due_to_reference.update(ragas_metric_filter)
 
-    # Optionally compute per-sample metrics for individual results
+    # Optionally compute per-sample metrics for individual results (disabled for now)
     individual_results: Optional[List[EvaluationResult]] = None
-    if req.suite in (EvalSuite.QUICK, EvalSuite.BASELINE) and False:
-        # Disabled by default to avoid heavy per-sample evaluations; can be enabled later
-        individual_results = []
+
+    summary_payload: Dict[str, Any] = {
+        "avg_faithfulness": next(
+            (m.value for m in overall_metrics if m.name == "faithfulness"), 0.0
+        ),
+        "avg_answer_relevancy": next(
+            (
+                m.value
+                for m in overall_metrics
+                if m.name in ("answer_relevancy", "answer_relevance")
+            ),
+            0.0,
+        ),
+        "avg_context_precision": next(
+            (m.value for m in overall_metrics if m.name == "context_precision"), 0.0
+        ),
+        "avg_context_relevance": next(
+            (m.value for m in overall_metrics if m.name == "context_relevance"), 0.0
+        ),
+        "avg_groundedness": next(
+            (m.value for m in overall_metrics if m.name == "groundedness"), 0.0
+        ),
+        "pass_rate": sum(1 for m in overall_metrics if m.passed)
+        / max(1, len(overall_metrics)),
+    }
+
+    if skipped_due_to_reference:
+        summary_payload["skipped_metrics"] = sorted(skipped_due_to_reference)
 
     response = EvaluationResponse(
         run_id=run_id,
@@ -383,34 +477,11 @@ async def run_evaluation(
         processed_samples=request_samples,
         overall_metrics=overall_metrics,
         individual_results=individual_results,
-        summary={
-            "avg_faithfulness": next(
-                (m.value for m in overall_metrics if m.name == "faithfulness"), 0.0
-            ),
-            "avg_answer_relevancy": next(
-                (
-                    m.value
-                    for m in overall_metrics
-                    if m.name in ("answer_relevancy", "answer_relevance")
-                ),
-                0.0,
-            ),
-            "avg_context_precision": next(
-                (m.value for m in overall_metrics if m.name == "context_precision"), 0.0
-            ),
-            "avg_context_relevance": next(
-                (m.value for m in overall_metrics if m.name == "context_relevance"), 0.0
-            ),
-            "avg_groundedness": next(
-                (m.value for m in overall_metrics if m.name == "groundedness"), 0.0
-            ),
-            "pass_rate": sum(1 for m in overall_metrics if m.passed)
-            / max(1, len(overall_metrics)),
-        },
+        summary=summary_payload,
     )
 
     # Persist minimal run payload
-    storage_payload = response.model_dump()
+    storage_payload = response.model_dump(mode="json")
     try:
         storage_save_run(run_id, storage_payload)
     except Exception:
@@ -544,19 +615,21 @@ async def get_available_metrics(
     return {
         "trulens_metrics": {
             "context_relevance": {
-                "description": "Measures how relevant retrieved context is to the query",
+                "description": (
+                    "Measures how relevant retrieved context is to the query"
+                ),
                 "range": [0, 1],
                 "higher_is_better": True,
                 "default_threshold": 0.7,
             },
             "groundedness": {
-                "description": "Measures how well the answer is supported by context",
+                "description": ("Measures how well the answer is supported by context"),
                 "range": [0, 1],
                 "higher_is_better": True,
                 "default_threshold": 0.7,
             },
             "answer_relevance": {
-                "description": "Measures how relevant the answer is to the query",
+                "description": ("Measures how relevant the answer is to the query"),
                 "range": [0, 1],
                 "higher_is_better": True,
                 "default_threshold": 0.7,
@@ -564,7 +637,7 @@ async def get_available_metrics(
         },
         "ragas_metrics": {
             "faithfulness": {
-                "description": "Measures factual consistency of answer with context",
+                "description": ("Measures factual consistency of answer with context"),
                 "range": [0, 1],
                 "higher_is_better": True,
                 "default_threshold": 0.7,

@@ -7,7 +7,7 @@ Persists JSON files under data/eval_runs/<run_id>.json
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
@@ -18,11 +18,17 @@ def ensure_dir() -> None:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def save_run(run_id: str, payload: Dict[str, Any]) -> Path:
     ensure_dir()
     path = RUNS_DIR / f"{run_id}.json"
     with path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+        json.dump(payload, f, ensure_ascii=False, indent=2, default=_json_default)
     return path
 
 

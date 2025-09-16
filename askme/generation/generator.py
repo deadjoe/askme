@@ -201,7 +201,10 @@ class OpenAIChatGenerator(BaseGenerator):
                 choice = resp.choices[0].message.content if resp.choices else ""
                 return choice or ""
 
-            return await anyio.to_thread.run_sync(_call)
+            result = await anyio.to_thread.run_sync(_call)
+            from typing import cast
+
+            return cast(str, result)
         except Exception:
             # Fall back to local template if OpenAI endpoint is unavailable
             st = SimpleTemplateGenerator(self.config)
