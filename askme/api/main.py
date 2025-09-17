@@ -141,6 +141,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await app.state.embedding_service.cleanup()
         if hasattr(app.state, "generator") and hasattr(app.state.generator, "cleanup"):
             await app.state.generator.cleanup()
+
+        # Force cleanup of ML model resources
+        import gc
+
+        # Clear PyTorch cache if available
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+        # Force garbage collection
+        gc.collect()
+
     except Exception as e:
         logger.warning(f"Error during shutdown: {e}")
 

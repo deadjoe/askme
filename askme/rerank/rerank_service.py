@@ -244,6 +244,8 @@ class BGEReranker(BaseReranker):
             if _torch and hasattr(_torch, "cuda") and _torch.cuda.is_available():
                 _torch.cuda.empty_cache()
 
+            # Explicitly delete model as suggested by FlagEmbedding developers
+            del self.model
             self.model = None
             self._is_initialized = False
             logger.info("BGE reranker cleaned up")
