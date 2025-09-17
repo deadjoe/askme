@@ -3,18 +3,21 @@ BGE-M3 embedding service with sparse and dense vector generation.
 """
 
 import asyncio
+import importlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple, Union
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 
-try:
-    import torch
-except Exception:  # pragma: no cover
-    torch = None
-
 from askme.core.config import EmbeddingConfig
+
+torch_module: ModuleType | None
+try:
+    torch_module = importlib.import_module("torch")
+except Exception:  # pragma: no cover
+    torch_module = None
 
 # Optional symbol for tests to patch without importing heavy deps at module import time
 try:  # pragma: no cover - provide patch point for tests
@@ -32,11 +35,15 @@ class BGEEmbeddingService:
 
     def __init__(self, config: EmbeddingConfig):
         self.config = config
-        self.model = None
+        self.model: Any | None = None
         # 允许在未安装 torch 的环境下工作（跳过 GPU 检测）
-        self.device = (
-            "cuda" if (hasattr(torch, "cuda") and torch.cuda.is_available()) else "cpu"
-        )
+        has_cuda = False
+        if torch_module is not None and hasattr(torch_module, "cuda"):
+            cuda_mod = getattr(torch_module, "cuda")
+            is_available = getattr(cuda_mod, "is_available", None)
+            if callable(is_available):
+                has_cuda = bool(is_available())
+        self.device = "cuda" if has_cuda else "cpu"
         self._is_initialized = False
         # Thread pool for CPU-intensive embedding operations
         self._executor = ThreadPoolExecutor(
@@ -147,18 +154,96 @@ class BGEEmbeddingService:
             logger.error(f"Failed to encode documents: {e}")
             raise
 
+    def _require_model(self) -> Any:
+        """确保内置模型已初始化并返回实例。"""
+        if self.model is None:
+            raise RuntimeError("Embedding model not initialized")
+        return self.model
+
     def _encode_batch_sync(
         self, texts: List[str], batch_size: int, max_length: int
     ) -> Dict[str, Any]:
         """Synchronous batch encoding for thread pool execution."""
-        return self.model.encode(
-            texts,
-            batch_size=batch_size,
-            max_length=max_length,
-            return_dense=True,
-            return_sparse=True,
-            return_colbert_vecs=False,
+        model = self._require_model()
+        return cast(
+            Dict[str, Any],
+            model.encode(
+                texts,
+                batch_size=batch_size,
+                max_length=max_length,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            ),
         )
+
+    def _encode_single_batch(self, text: str, max_length: int) -> Dict[str, Any]:
+        model = self._require_model()
+        return cast(
+            Dict[str, Any],
+            model.encode(
+                [text],
+                batch_size=1,
+                max_length=max_length,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            ),
+        )
+
+    def _encode_sparse_single(self, text: str, max_length: int) -> Dict[str, Any]:
+        model = self._require_model()
+        return cast(
+            Dict[str, Any],
+            model.encode(
+                [text],
+                batch_size=1,
+                max_length=max_length,
+                return_dense=False,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            ),
+        )
+
+    def _encode_query_single(self, text: str, max_length: int) -> Dict[str, Any]:
+        model = self._require_model()
+        return cast(
+            Dict[str, Any],
+            model.encode(
+                [text],
+                batch_size=1,
+                max_length=max_length,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            ),
+        )
+
+    def _extract_dense_vector(self, result: Dict[str, Any]) -> List[float]:
+        """从模型返回结果中提取一维 dense embedding。"""
+        vec_data = result.get("dense_vecs")
+        if vec_data is None:
+            vec_data = result.get("dense_vectors")
+        if vec_data is None:
+            raise RuntimeError("Dense embedding not returned by model")
+
+        if hasattr(vec_data, "shape") and hasattr(vec_data, "tolist"):
+            arr = cast(Any, vec_data)
+            if len(getattr(arr, "shape", [])) == 2 and arr.shape[0] >= 1:
+                dense_values = arr[0].tolist()
+            else:
+                dense_values = arr.tolist()
+            return [float(x) for x in list(dense_values)]
+
+        if isinstance(vec_data, list) and vec_data:
+            dense_item = vec_data[0]
+            if hasattr(dense_item, "tolist"):
+                dense_values = cast(Any, dense_item).tolist()
+            else:
+                dense_values = dense_item
+            return [float(x) for x in list(dense_values)]
+
+        raise RuntimeError("Dense embedding not returned by model")
 
     async def get_dense_embedding(self, text: str) -> List[float]:
         """Return a single dense embedding for the given text."""
@@ -166,38 +251,19 @@ class BGEEmbeddingService:
             await self.initialize()
 
         try:
-            if self.model is None:
-                raise RuntimeError("Embedding model not initialized")
-
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 self._executor,
-                self._encode_batch_sync,
-                [text],
-                1,
+                self._encode_single_batch,
+                text,
                 self.config.max_length,
             )
-            vec = result.get("dense_vecs")
-            if vec is None:
-                vec = result.get("dense_vectors")
-            # vec can be list-of-arrays or numpy array with shape (1, dim)
-            if hasattr(vec, "shape") and hasattr(vec, "tolist"):
-                # numpy array
-                arr = vec
-                if len(arr.shape) == 2 and arr.shape[0] >= 1:
-                    return arr[0].tolist()
-                return arr.tolist()
-            if isinstance(vec, list) and vec:
-                dense = vec[0]
-                return dense.tolist() if hasattr(dense, "tolist") else list(dense)
-            raise RuntimeError("Dense embedding not returned by model")
+            return self._extract_dense_vector(result)
         except Exception as e:
             logger.error(f"Failed to get dense embedding: {e}")
             raise
 
-    async def get_sparse_embedding(
-        self, text: str
-    ) -> Dict[str, float] | Dict[int, float]:
+    async def get_sparse_embedding(self, text: str) -> Dict[int | str, float]:
         """Return a single sparse embedding (lexical weights) for the given text.
 
         Returns either token->weight mapping or index->weight depending on model output.
@@ -206,30 +272,30 @@ class BGEEmbeddingService:
             await self.initialize()
 
         try:
-            if self.model is None:
-                raise RuntimeError("Embedding model not initialized")
-
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 self._executor,
-                lambda: self.model.encode(
-                    [text],
-                    batch_size=1,
-                    max_length=self.config.max_length,
-                    return_dense=False,
-                    return_sparse=True,
-                    return_colbert_vecs=False,
-                ),
+                self._encode_sparse_single,
+                text,
+                self.config.max_length,
             )
 
             # Support multiple return shapes used in tests and real model
             if "lexical_weights" in result:
                 weights_list = result["lexical_weights"]
                 if isinstance(weights_list, list) and weights_list:
-                    return weights_list[0]
+                    raw_weights = weights_list[0]
+                    if isinstance(raw_weights, dict):
+                        return {
+                            str(k): float(v)
+                            for k, v in raw_weights.items()
+                            if float(v) != 0.0
+                        }
             if "sparse_vecs" in result:
-                sparse = result["sparse_vecs"][0]
-                return self._convert_sparse_embedding(sparse)
+                sparse_vecs = result["sparse_vecs"]
+                if isinstance(sparse_vecs, list) and sparse_vecs:
+                    sparse = sparse_vecs[0]
+                    return self._convert_sparse_embedding(sparse)
 
             # Fallback to empty
             return {}
@@ -261,39 +327,40 @@ class BGEEmbeddingService:
                 query_text = query
 
             # Encode query in thread pool
-            if self.model is None:
-                raise RuntimeError("Embedding model not initialized")
-
             loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(
                 self._executor,
-                lambda: self.model.encode(
-                    [query_text],
-                    batch_size=1,
-                    max_length=self.config.max_length,
-                    return_dense=True,
-                    return_sparse=True,
-                    return_colbert_vecs=False,
-                ),
+                self._encode_query_single,
+                query_text,
+                self.config.max_length,
             )
 
-            dense_embedding = results.get("dense_vecs")[0]
+            dense_values = self._extract_dense_vector(results)
+            dense_array = np.array(dense_values, dtype=float)
+
             # 兼容无 sparse_vecs 的形态（如仅返回 lexical_weights 或未返回稀疏向量）
-            if "sparse_vecs" in results and results["sparse_vecs"]:
-                sparse_embedding = results["sparse_vecs"][0]
+            sparse_embedding_raw: Any = {}
+            sparse_vecs = results.get("sparse_vecs")
+            if isinstance(sparse_vecs, list) and sparse_vecs:
+                sparse_embedding_raw = sparse_vecs[0]
             else:
-                # 若仅有 lexical_weights，暂不转换索引，Weaviate 路径不使用该值
-                sparse_embedding = {}
+                lexical_weights = results.get("lexical_weights")
+                if isinstance(lexical_weights, list) and lexical_weights:
+                    sparse_embedding_raw = lexical_weights[0]
 
             # Normalize dense embedding if configured
             if self.config.normalize_embeddings:
-                dense_embedding = dense_embedding / np.linalg.norm(dense_embedding)
+                norm = float(np.linalg.norm(dense_array))
+                if norm > 0:
+                    dense_array = dense_array / norm
+
+            dense_list = dense_array.tolist()
 
             # Convert sparse embedding
             sparse_dict = (
-                self._convert_sparse_embedding(sparse_embedding)
-                if isinstance(sparse_embedding, (list, dict))
-                or hasattr(sparse_embedding, "indices")
+                self._convert_sparse_embedding(sparse_embedding_raw)
+                if isinstance(sparse_embedding_raw, (list, dict))
+                or hasattr(sparse_embedding_raw, "indices")
                 else {}
             )
 
@@ -301,35 +368,39 @@ class BGEEmbeddingService:
 
             return {
                 "query": query,
-                "dense_embedding": dense_embedding.tolist(),
+                "dense_embedding": dense_list,
                 "sparse_embedding": sparse_dict,
-                "embedding_dim": len(dense_embedding),
+                "embedding_dim": len(dense_list),
             }
 
         except Exception as e:
             logger.error(f"Failed to encode query: {e}")
             raise
 
-    def _convert_sparse_embedding(self, sparse_array: Any) -> Dict[int, float]:
+    def _convert_sparse_embedding(self, sparse_array: Any) -> Dict[int | str, float]:
         """Convert sparse embedding array to dictionary format."""
         if hasattr(sparse_array, "indices") and hasattr(sparse_array, "values"):
             # Handle scipy sparse format
-            return {
-                int(idx): float(val)
-                for idx, val in zip(sparse_array.indices, sparse_array.values)
-                if val != 0
-            }
-        elif isinstance(sparse_array, dict):
-            # Already in dictionary format
-            return {int(k): float(v) for k, v in sparse_array.items() if v != 0}
-        elif isinstance(sparse_array, (list, np.ndarray)):
-            # Dense array format, convert to sparse
+            values = zip(sparse_array.indices, sparse_array.values)
+            return {int(idx): float(val) for idx, val in values if val != 0}
+
+        if isinstance(sparse_array, dict):
+            converted: Dict[int | str, float] = {}
+            for key, value in sparse_array.items():
+                try:
+                    numeric_key = int(key)
+                except (TypeError, ValueError):
+                    converted[str(key)] = float(value)
+                else:
+                    converted[numeric_key] = float(value)
+
+            return {k: v for k, v in converted.items() if v != 0}
+        if isinstance(sparse_array, (list, np.ndarray)):
             return {
                 int(i): float(val) for i, val in enumerate(sparse_array) if val != 0
             }
-        else:
-            logger.warning(f"Unknown sparse embedding format: {type(sparse_array)}")
-            return {}
+
+        return {}
 
     async def compute_similarity(
         self,
@@ -415,8 +486,13 @@ class BGEEmbeddingService:
         try:
             if self.model is not None:
                 # Clear CUDA cache if using GPU
-                if hasattr(torch, "cuda") and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                if torch_module is not None and hasattr(torch_module, "cuda"):
+                    cuda_mod = getattr(torch_module, "cuda")
+                    is_available = getattr(cuda_mod, "is_available", None)
+                    if callable(is_available) and is_available():
+                        empty_cache = getattr(cuda_mod, "empty_cache", None)
+                        if callable(empty_cache):
+                            empty_cache()
 
                 # Explicitly delete model as suggested by FlagEmbedding developers
                 del self.model

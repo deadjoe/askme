@@ -4,41 +4,42 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, cast
 
 import openai
 from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatGeneration, LLMResult
+from langchain_core.outputs import ChatGeneration, Generation, LLMResult
 from langchain_core.prompt_values import PromptValue
 
-try:
+if TYPE_CHECKING:
     from ragas.llms.base import BaseRagasLLM as BaseRagasLLMBase
     from ragas.run_config import RunConfig as RunConfigType
-except Exception:  # pragma: no cover - used in tests with stubbed ragas
+else:  # pragma: no cover - runtime import with fallback
+    try:
+        from ragas.llms.base import BaseRagasLLM as BaseRagasLLMBase
+        from ragas.run_config import RunConfig as RunConfigType
+    except Exception:
 
-    @dataclass
-    class _FallbackRunConfig:
-        timeout: int = 60
+        @dataclass
+        class RunConfigType:
+            timeout: int = 60
 
-    class _FallbackBaseRagasLLM:  # minimal stub
-        def __init__(
-            self, run_config: _FallbackRunConfig | None = None, **kwargs: Any
-        ) -> None:
-            self.run_config = run_config or _FallbackRunConfig()
+        class BaseRagasLLMBase:  # minimal stub
+            def __init__(
+                self, run_config: RunConfigType | None = None, **kwargs: Any
+            ) -> None:
+                self.run_config = run_config or RunConfigType()
 
-        def set_run_config(self, run_config: _FallbackRunConfig) -> None:
-            self.run_config = run_config
+            def set_run_config(self, run_config: RunConfigType) -> None:
+                self.run_config = run_config
 
-        def __post_init__(self) -> None:
-            pass
-
-    BaseRagasLLMBase = _FallbackBaseRagasLLM
-    RunConfigType = _FallbackRunConfig
+            def __post_init__(self) -> None:
+                pass
 
 
-def _to_openai_messages(prompt: PromptValue) -> List[Dict[str, str]]:
+def _to_openai_messages(prompt: PromptValue) -> List[Dict[str, Any]]:
     base_messages: List[BaseMessage] = prompt.to_messages()
-    formatted: List[Dict[str, str]] = []
+    formatted: List[Dict[str, Any]] = []
     for message in base_messages:
         role = message.type
         if role == "human":
@@ -57,7 +58,9 @@ class OllamaRagasLLM(BaseRagasLLMBase):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        self._client = openai.OpenAI(base_url=self.base_url, api_key=self.api_key)
+        self._client: openai.OpenAI = openai.OpenAI(
+            base_url=self.base_url, api_key=self.api_key
+        )
 
     # BaseRagasLLM expects synchronous + async APIs.
     # Reuse the sync call for async execution via a thread pool.
@@ -71,13 +74,13 @@ class OllamaRagasLLM(BaseRagasLLMBase):
         messages = _to_openai_messages(prompt)
         response = self._client.chat.completions.create(
             model=self.model,
-            messages=messages,
+            messages=cast(Iterable[Any], messages),
             temperature=temperature,
             n=n,
             stop=stop,
         )
 
-        generations: List[ChatGeneration] = []
+        generations: List[Generation] = []
         for choice in response.choices:
             text = choice.message.content or ""
             ai_msg = AIMessage(content=text)
@@ -95,7 +98,8 @@ class OllamaRagasLLM(BaseRagasLLMBase):
                 token_usage = getattr(usage, "__dict__", {})
             llm_output["token_usage"] = token_usage
 
-        return LLMResult(generations=[generations], llm_output=llm_output)
+        generation_rows: List[List[Generation]] = [generations]
+        return LLMResult(generations=generation_rows, llm_output=llm_output)
 
     def generate_text(
         self,
@@ -116,12 +120,13 @@ class OllamaRagasLLM(BaseRagasLLMBase):
         callbacks: Any = None,
     ) -> LLMResult:
         loop = asyncio.get_running_loop()
+        resolved_temp = temperature if temperature is not None else 0.01
         return await loop.run_in_executor(
             None,
             self._generate,
             prompt,
             n,
-            temperature or self.get_temperature(n),
+            resolved_temp,
             stop,
         )
 
@@ -130,9 +135,13 @@ class OllamaRagasLLM(BaseRagasLLMBase):
 
 
 def build_ollama_llm(settings: Dict[str, str]) -> OllamaRagasLLM:
-    return OllamaRagasLLM(
+    llm = OllamaRagasLLM(
         model=settings.get("model", "gpt-oss:20b"),
         base_url=settings.get("base_url", "http://localhost:11434/v1"),
         api_key=settings.get("api_key", "ollama-local"),
-        run_config=RunConfigType(timeout=60),
     )
+    try:
+        llm.set_run_config(RunConfigType(timeout=60))
+    except Exception:
+        pass
+    return llm

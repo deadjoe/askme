@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 from contextlib import asynccontextmanager
+from types import FrameType
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
@@ -196,7 +197,6 @@ def create_app() -> FastAPI:
     app.include_router(evaluation.router, prefix="/eval", tags=["evaluation"])
 
     # Global exception handler
-    @app.exception_handler(Exception)
     async def global_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
@@ -207,6 +207,8 @@ def create_app() -> FastAPI:
             content={"error": "Internal server error", "detail": str(exc)},
         )
 
+    app.add_exception_handler(Exception, global_exception_handler)
+
     return app
 
 
@@ -214,10 +216,10 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def setup_signal_handlers():
+def setup_signal_handlers() -> None:
     """Setup signal handlers for graceful shutdown."""
 
-    def signal_handler(signum, frame):
+    def signal_handler(signum: int, frame: FrameType | None) -> None:
         logger = logging.getLogger(__name__)
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         # FastAPI's lifespan will handle the cleanup
