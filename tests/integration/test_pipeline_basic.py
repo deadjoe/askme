@@ -22,7 +22,7 @@ from askme.rerank.rerank_service import RerankingService  # noqa: E402
 from askme.retriever.milvus_retriever import MilvusRetriever  # noqa: E402
 
 
-async def test_basic_pipeline():
+async def test_basic_pipeline() -> None:
     """Test the basic askme pipeline without external dependencies."""
 
     print("🚀 Testing askme RAG pipeline components...")

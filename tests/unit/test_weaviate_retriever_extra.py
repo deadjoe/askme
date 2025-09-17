@@ -14,7 +14,7 @@ from askme.retriever.weaviate_retriever import WeaviateRetriever
 
 
 @pytest.mark.asyncio
-async def test_create_collection_already_exists():
+async def test_create_collection_already_exists() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     client = MagicMock()
     cols = MagicMock()
@@ -27,7 +27,7 @@ async def test_create_collection_already_exists():
 
 
 @pytest.mark.asyncio
-async def test_get_collection_stats_total_count_dict_path():
+async def test_get_collection_stats_total_count_dict_path() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     col = MagicMock()
     info = MagicMock()
@@ -61,7 +61,7 @@ class _SyncBatcher:
 
 
 @pytest.mark.asyncio
-async def test_insert_documents_sync_batch_path():
+async def test_insert_documents_sync_batch_path() -> None:
     r = WeaviateRetriever({"class_name": "C"})
 
     class _Col:
@@ -88,7 +88,7 @@ async def test_insert_documents_sync_batch_path():
 
 
 @pytest.mark.asyncio
-async def test_get_document_fallback_get_by_id():
+async def test_get_document_fallback_get_by_id() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     col = MagicMock()
     col.query.fetch_objects.return_value = MagicMock(objects=[])
@@ -106,7 +106,7 @@ async def test_get_document_fallback_get_by_id():
 
 
 @pytest.mark.asyncio
-async def test_update_document_failure_on_insert():
+async def test_update_document_failure_on_insert() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     with patch.object(r, "delete_document", return_value=True):
         with patch.object(r, "insert_documents", side_effect=Exception("boom")):
@@ -117,7 +117,7 @@ async def test_update_document_failure_on_insert():
 
 
 @pytest.mark.asyncio
-async def test__ensure_collection_creates_when_get_fails():
+async def test__ensure_collection_creates_when_get_fails() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     client = MagicMock()
     cols = MagicMock()
@@ -136,7 +136,7 @@ async def test__ensure_collection_creates_when_get_fails():
 
 
 @pytest.mark.asyncio
-async def test_delete_document_multiple_matches():
+async def test_delete_document_multiple_matches() -> None:
     r = WeaviateRetriever({"class_name": "C"})
     col = MagicMock()
     res = MagicMock()
@@ -158,7 +158,7 @@ async def test_delete_document_multiple_matches():
 
 
 @pytest.mark.asyncio
-async def test_connect_local_error_path():
+async def test_connect_local_error_path() -> None:
     r = WeaviateRetriever({"url": "http://localhost:8080"})
     with patch("askme.retriever.weaviate_retriever.weaviate") as w:
         w.connect_to_custom.side_effect = RuntimeError("conn fail")
@@ -167,7 +167,7 @@ async def test_connect_local_error_path():
 
 
 @pytest.mark.asyncio
-async def test_connect_local_heuristic_grpc_port_plus_one():
+async def test_connect_local_heuristic_grpc_port_plus_one() -> None:
     r = WeaviateRetriever({"url": "http://localhost:8081"})
     with patch("askme.retriever.weaviate_retriever.weaviate") as w:
         w.connect_to_custom.return_value = MagicMock()

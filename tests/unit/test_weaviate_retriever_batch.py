@@ -34,7 +34,7 @@ class _AsyncBatcher:
 
 
 @pytest.mark.asyncio
-async def test_insert_documents_async_batch_path():
+async def test_insert_documents_async_batch_path() -> None:
     r = WeaviateRetriever({"class_name": "C"})
 
     # minimal fake collection that exposes .batch.dynamic()

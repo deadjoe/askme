@@ -48,7 +48,7 @@ def mock_request():
 class TestCitationModel:
     """Test Citation model validation."""
 
-    def test_citation_creation(self):
+    def test_citation_creation(self) -> None:
         """Test creating a citation with valid data."""
         citation = Citation(
             doc_id="doc_123",
@@ -68,7 +68,7 @@ class TestCitationModel:
         assert citation.score == 0.95
         assert citation.metadata == {"author": "Test Author"}
 
-    def test_citation_score_validation(self):
+    def test_citation_score_validation(self) -> None:
         """Test citation score validation."""
         with pytest.raises(ValueError):
             Citation(
@@ -80,7 +80,7 @@ class TestCitationModel:
                 score=1.5,  # Invalid score > 1
             )
 
-    def test_citation_optional_metadata(self):
+    def test_citation_optional_metadata(self) -> None:
         """Test citation with optional metadata."""
         citation = Citation(
             doc_id="doc_123", title="Test", content="Test", start=0, end=10, score=0.8
@@ -91,7 +91,7 @@ class TestCitationModel:
 class TestRetrievalDebugInfoModel:
     """Test RetrievalDebugInfo model."""
 
-    def test_debug_info_creation(self):
+    def test_debug_info_creation(self) -> None:
         """Test creating debug info with all fields."""
         debug = RetrievalDebugInfo(
             bm25_hits=25,
@@ -118,7 +118,7 @@ class TestRetrievalDebugInfoModel:
         assert debug.latency_ms == 1200
         assert debug.overlap_hits == 15
 
-    def test_debug_info_optional_fields(self):
+    def test_debug_info_optional_fields(self) -> None:
         """Test debug info with minimal required fields."""
         debug = RetrievalDebugInfo(
             bm25_hits=10,
@@ -141,7 +141,7 @@ class TestRetrievalDebugInfoModel:
 class TestQueryRequestModel:
     """Test QueryRequest model validation."""
 
-    def test_query_request_defaults(self):
+    def test_query_request_defaults(self) -> None:
         """Test query request with default values."""
         req = QueryRequest(q="test query")
 
@@ -157,7 +157,7 @@ class TestQueryRequestModel:
         assert req.filters is None
         assert req.include_debug is False
 
-    def test_query_request_validation(self):
+    def test_query_request_validation(self) -> None:
         """Test query request validation."""
         # Valid request
         req = QueryRequest(
@@ -178,7 +178,7 @@ class TestQueryRequestModel:
         assert req.alpha == 0.7
         assert req.use_rrf is False
 
-    def test_query_request_validation_errors(self):
+    def test_query_request_validation_errors(self) -> None:
         """Test query request validation errors."""
         # Empty query
         with pytest.raises(ValueError):
@@ -202,7 +202,7 @@ class TestQueryRequestModel:
 class TestRetrievalRequestModel:
     """Test RetrievalRequest model."""
 
-    def test_retrieval_request_defaults(self):
+    def test_retrieval_request_defaults(self) -> None:
         """Test retrieval request defaults."""
         req = RetrievalRequest(q="test query")
 
@@ -215,7 +215,7 @@ class TestRetrievalRequestModel:
         assert req.rrf_k == 60
         assert req.filters is None
 
-    def test_retrieval_request_custom_values(self):
+    def test_retrieval_request_custom_values(self) -> None:
         """Test retrieval request with custom values."""
         req = RetrievalRequest(
             q="test query",
@@ -241,7 +241,7 @@ class TestQueryDocuments:
     """Test query_documents endpoint function."""
 
     @pytest.mark.asyncio
-    async def test_cohere_validation_error(self, mock_request, mock_settings):
+    async def test_cohere_validation_error(self, mock_request, mock_settings) -> None:
         """Test Cohere reranker validation error."""
         req = QueryRequest(q="test query", reranker="cohere")
         mock_settings.rerank.cohere_enabled = False
@@ -253,7 +253,9 @@ class TestQueryDocuments:
         assert "Cohere reranker not enabled" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    async def test_cohere_enabled_passes_validation(self, mock_request, mock_settings):
+    async def test_cohere_enabled_passes_validation(
+        self, mock_request, mock_settings
+    ) -> None:
         """Test that Cohere validation passes when enabled."""
         req = QueryRequest(q="test query", reranker="cohere")
         mock_settings.rerank.cohere_enabled = True
@@ -267,7 +269,7 @@ class TestQueryDocuments:
         assert len(response.citations) > 0
 
     @pytest.mark.asyncio
-    async def test_mock_response_fallback(self, mock_request, mock_settings):
+    async def test_mock_response_fallback(self, mock_request, mock_settings) -> None:
         """Test fallback to mock response when services are not available."""
         req = QueryRequest(
             q="test query",
@@ -306,7 +308,7 @@ class TestQueryDocuments:
         UUID(response.query_id)  # Will raise ValueError if invalid
 
     @pytest.mark.asyncio
-    async def test_mock_response_with_rrf(self, mock_request, mock_settings):
+    async def test_mock_response_with_rrf(self, mock_request, mock_settings) -> None:
         """Test mock response with RRF enabled."""
         req = QueryRequest(q="test query", include_debug=True, use_rrf=True, rrf_k=80)
 
@@ -317,7 +319,9 @@ class TestQueryDocuments:
         assert response.retrieval_debug.rrf_k == 80
 
     @pytest.mark.asyncio
-    async def test_no_debug_info_when_disabled(self, mock_request, mock_settings):
+    async def test_no_debug_info_when_disabled(
+        self, mock_request, mock_settings
+    ) -> None:
         """Test that debug info is None when include_debug=False."""
         req = QueryRequest(q="test query", include_debug=False)
 
@@ -326,7 +330,9 @@ class TestQueryDocuments:
         assert response.retrieval_debug is None
 
     @pytest.mark.asyncio
-    async def test_mock_response_with_generator(self, mock_request, mock_settings):
+    async def test_mock_response_with_generator(
+        self, mock_request, mock_settings
+    ) -> None:
         """Test mock response fallback with generator available."""
         # Mock generator service
         mock_generator = AsyncMock()
@@ -347,7 +353,9 @@ class TestQueryDocuments:
         assert len(call_args[0][1]) == 2  # passages
 
     @pytest.mark.asyncio
-    async def test_mock_response_generator_exception(self, mock_request, mock_settings):
+    async def test_mock_response_generator_exception(
+        self, mock_request, mock_settings
+    ) -> None:
         """Test mock response when generator raises exception."""
         # Mock generator that raises exception
         mock_generator = AsyncMock()
@@ -364,7 +372,7 @@ class TestQueryDocuments:
         assert "[Doc 002: Sample Document 2]" in response.answer
 
     @pytest.mark.asyncio
-    async def test_mock_response_no_request_context(self, mock_settings):
+    async def test_mock_response_no_request_context(self, mock_settings) -> None:
         """Test mock response handling when request is None."""
         req = QueryRequest(q="test query")
 
@@ -378,7 +386,7 @@ class TestRetrieveDocuments:
     """Test retrieve_documents endpoint function."""
 
     @pytest.mark.asyncio
-    async def test_mock_retrieval_response(self, mock_request, mock_settings):
+    async def test_mock_retrieval_response(self, mock_request, mock_settings) -> None:
         """Test mock retrieval response when services unavailable."""
         req = RetrievalRequest(
             q="test retrieval query",
@@ -418,7 +426,7 @@ class TestRetrieveDocuments:
         UUID(response.query_id)  # Will raise ValueError if invalid
 
     @pytest.mark.asyncio
-    async def test_retrieval_with_rrf(self, mock_request, mock_settings):
+    async def test_retrieval_with_rrf(self, mock_request, mock_settings) -> None:
         """Test retrieval response with RRF enabled."""
         req = RetrievalRequest(q="test query", use_rrf=True, rrf_k=70)
 
@@ -432,7 +440,7 @@ class TestFindSimilarDocuments:
     """Test find_similar_documents endpoint function."""
 
     @pytest.mark.asyncio
-    async def test_find_similar_basic(self, mock_settings):
+    async def test_find_similar_basic(self, mock_settings) -> None:
         """Test basic similar documents functionality."""
         response = await find_similar_documents("test_doc_123", 5, mock_settings)
 
@@ -446,7 +454,7 @@ class TestFindSimilarDocuments:
         assert similar_doc.score == 0.89
 
     @pytest.mark.asyncio
-    async def test_find_similar_with_limit(self, mock_settings):
+    async def test_find_similar_with_limit(self, mock_settings) -> None:
         """Test similar documents with custom limit."""
         response = await find_similar_documents(
             "test_doc_456", limit=15, settings=mock_settings
@@ -462,7 +470,7 @@ class TestExplainRetrieval:
     """Test explain_retrieval endpoint function."""
 
     @pytest.mark.asyncio
-    async def test_explain_retrieval_basic(self, mock_settings):
+    async def test_explain_retrieval_basic(self, mock_settings) -> None:
         """Test basic retrieval explanation."""
         req = RetrievalRequest(q="explain this query", topK=10, alpha=0.6)
 
@@ -480,7 +488,7 @@ class TestExplainRetrieval:
         assert ranking_factors["final_score"] == 0.82
 
     @pytest.mark.asyncio
-    async def test_explain_retrieval_with_filters(self, mock_settings):
+    async def test_explain_retrieval_with_filters(self, mock_settings) -> None:
         """Test retrieval explanation with filters."""
         req = RetrievalRequest(
             q="filtered query", filters={"category": "research", "year": 2024}
@@ -495,7 +503,7 @@ class TestExplainRetrieval:
 class TestResponseModels:
     """Test response model validation."""
 
-    def test_query_response_creation(self):
+    def test_query_response_creation(self) -> None:
         """Test QueryResponse model creation."""
         citations = [
             Citation(
@@ -532,7 +540,7 @@ class TestResponseModels:
         assert response.query_id == "12345-678-90"
         assert response.retrieval_debug == debug_info
 
-    def test_retrieval_response_creation(self):
+    def test_retrieval_response_creation(self) -> None:
         """Test RetrievalResponse model creation."""
         documents = [
             Citation(
@@ -572,7 +580,7 @@ class TestResponseModels:
 class TestRouterIntegration:
     """Test router integration."""
 
-    def test_router_has_expected_endpoints(self):
+    def test_router_has_expected_endpoints(self) -> None:
         """Test that router has all expected endpoints."""
         # Get all routes from router
         routes = [route.path for route in router.routes]
@@ -583,7 +591,7 @@ class TestRouterIntegration:
         assert "/similar/{doc_id}" in routes  # find_similar_documents
         assert "/explain" in routes  # explain_retrieval
 
-    def test_router_endpoint_methods(self):
+    def test_router_endpoint_methods(self) -> None:
         """Test that endpoints have correct HTTP methods."""
         route_methods = {route.path: route.methods for route in router.routes}
 

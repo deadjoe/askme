@@ -12,7 +12,7 @@ from askme.evals.trulens_runner import run_trulens
 class TestTruLensRunner:
     """Test TruLens evaluation runner."""
 
-    def test_trulens_import_error(self):
+    def test_trulens_import_error(self) -> None:
         """Test RuntimeError when TruLens is not available."""
         # Block the import by making it raise an exception
         with patch(
@@ -22,7 +22,7 @@ class TestTruLensRunner:
             with pytest.raises(RuntimeError, match="TruLens not available"):
                 run_trulens([])
 
-    def test_trulens_basic_execution(self):
+    def test_trulens_basic_execution(self) -> None:
         """Test basic TruLens execution with mocked dependencies."""
         # Mock the imported modules and classes
         mock_modules = {
@@ -97,7 +97,7 @@ class TestTruLensRunner:
                 for score in result.values():
                     assert isinstance(score, float)
 
-    def test_trulens_empty_samples(self):
+    def test_trulens_empty_samples(self) -> None:
         """Test TruLens with empty samples list."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -131,7 +131,7 @@ class TestTruLensRunner:
                 assert all(key in result for key in expected_keys)
                 assert all(result[key] == 0.0 for key in expected_keys)
 
-    def test_trulens_evaluation_exceptions(self):
+    def test_trulens_evaluation_exceptions(self) -> None:
         """Test TruLens handles individual evaluation exceptions gracefully."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -189,7 +189,7 @@ class TestTruLensRunner:
                 assert all(key in result for key in expected_keys)
                 assert all(result[key] == 0.0 for key in expected_keys)
 
-    def test_trulens_provider_initialization_error(self):
+    def test_trulens_provider_initialization_error(self) -> None:
         """Test RuntimeError when provider initialization fails."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -220,7 +220,7 @@ class TestTruLensRunner:
                 with pytest.raises(RuntimeError, match="TruLens evaluation failed"):
                     run_trulens(samples)
 
-    def test_trulens_environment_setup(self):
+    def test_trulens_environment_setup(self) -> None:
         """Test proper environment variable setup."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -263,7 +263,7 @@ class TestTruLensRunner:
                 assert mock_environ.get("OPENAI_API_BASE") == "http://test:8080/v1"
                 mock_environ.setdefault.assert_called()
 
-    def test_trulens_multiple_samples_averaging(self):
+    def test_trulens_multiple_samples_averaging(self) -> None:
         """Test TruLens with multiple samples and score averaging."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -324,14 +324,14 @@ class TestTruLensRunner:
                 assert abs(result["answer_relevance"] - 0.8) < 0.001  # (0.7 + 0.9) / 2
                 assert abs(result["context_relevance"] - 0.6) < 0.001  # (0.5 + 0.7) / 2
 
-    def test_trulens_with_provider_parameter(self):
+    def test_trulens_with_provider_parameter(self) -> None:
         """Test TruLens with provider parameter (currently unused)."""
         # Test that provider parameter is accepted but currently doesn't change behavior
         with patch("builtins.__import__", side_effect=ImportError("No module")):
             with pytest.raises(RuntimeError, match="TruLens not available"):
                 run_trulens([], provider="openai")
 
-    def test_trulens_missing_sample_fields(self):
+    def test_trulens_missing_sample_fields(self) -> None:
         """Test TruLens with samples missing some fields."""
         mock_modules = {
             "trulens_eval": MagicMock(),
@@ -383,7 +383,7 @@ class TestTruLensRunner:
                     for key in ["groundedness", "answer_relevance", "context_relevance"]
                 )
 
-    def test_trulens_context_joining(self):
+    def test_trulens_context_joining(self) -> None:
         """Test that contexts are properly joined for context relevance evaluation."""
         mock_modules = {
             "trulens_eval": MagicMock(),
