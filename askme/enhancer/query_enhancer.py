@@ -31,8 +31,9 @@ def generate_hyde_passage(query: str, max_tokens: int = 256) -> str:
     HyDE: providing a likely relevant passage to improve retrieval recall.
     """
     base = (
-        "This passage discusses the topic: {q}. It provides background, key concepts, "
-        "and practical details to support answering questions about it in a concise way."
+        "This passage discusses the topic: {q}. It provides background, "
+        "key concepts, and practical details to support answering questions "
+        "about it in a concise way."
     )
     text = base.format(q=query)
     return text[: max_tokens * 4]  # rough truncation
