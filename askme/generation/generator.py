@@ -9,20 +9,22 @@ and is only used when explicitly enabled via config or env.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import httpx
 
-# OpenAI client is optional; make import safe for test environments
+from askme.core.config import GenerationConfig
+
+# OpenAI client是可选依赖，这里延迟导入并在缺失时提供显式错误
 try:  # pragma: no cover - import guard
-    from openai import OpenAI
+    _openai_module = importlib.import_module("openai")
+    OpenAI: Any = getattr(_openai_module, "OpenAI")
 except Exception:  # pragma: no cover
     OpenAI = None
-
-from askme.core.config import GenerationConfig
 
 
 @dataclass
@@ -155,9 +157,16 @@ class OpenAIChatGenerator(BaseGenerator):
 
     def __init__(self, config: GenerationConfig):
         super().__init__(config)
-        self._client: Optional[OpenAI] = None
+        self._client: Optional[Any] = None
 
-    def _get_client(self) -> OpenAI:
+    def _get_client(self) -> Any:
+        global OpenAI
+
+        if OpenAI is None:
+            raise RuntimeError(
+                "OpenAI client library is not available; "
+                "install openai or disable OpenAI generator"
+            )
         if self._client is None:
             import os
 
@@ -188,12 +197,9 @@ class OpenAIChatGenerator(BaseGenerator):
 
             def _call() -> str:
                 client = self._get_client()
-                # Type coercion to satisfy strict typing
-                from typing import cast
-
                 resp = client.chat.completions.create(
                     model=self.config.openai_model,
-                    messages=cast(list, messages),
+                    messages=cast(List[Dict[str, Any]], messages),
                     temperature=float(self.config.temperature),
                     top_p=float(self.config.top_p),
                     max_tokens=int(self.config.max_tokens),
@@ -201,10 +207,8 @@ class OpenAIChatGenerator(BaseGenerator):
                 choice = resp.choices[0].message.content if resp.choices else ""
                 return choice or ""
 
-            result = await anyio.to_thread.run_sync(_call)
-            from typing import cast
-
-            return cast(str, result)
+            result: str = await anyio.to_thread.run_sync(_call)
+            return result
         except Exception:
             # Fall back to local template if OpenAI endpoint is unavailable
             st = SimpleTemplateGenerator(self.config)
