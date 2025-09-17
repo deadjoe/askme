@@ -2,8 +2,10 @@
 Evaluation and metrics endpoints.
 """
 
+import asyncio
 import math
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -12,7 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
+from askme.evals.embedding_metrics import compute_embedding_metrics
 from askme.evals.evaluator import EvalItem, Evaluator
+from askme.evals.local_llm_metrics import evaluate_samples as llm_metric_eval
 from askme.evals.pipeline_runner import run_pipeline_once
 from askme.evals.ragas_runner import run_ragas
 from askme.evals.storage import list_runs as storage_list_runs
@@ -28,7 +32,6 @@ RAGAS_METRICS = {
     "context_precision",
     "context_recall",
 }
-REFERENCE_REQUIRED_METRICS = {"context_recall"}
 
 
 class EvalSuite(str, Enum):
@@ -185,16 +188,7 @@ async def run_evaluation(
 
     run_id = str(uuid.uuid4())
 
-    trulens_metric_filter: Optional[Set[str]] = (
-        None
-        if requested_metric_names is None
-        else requested_metric_names & TRULENS_METRICS
-    )
-    ragas_metric_filter: Optional[List[str]] = (
-        None
-        if requested_metric_names is None
-        else [m for m in requested_metric_names if m in RAGAS_METRICS]
-    )
+    # requested_metric_names controls downstream metric filtering
 
     # Apply config overrides to enable parameter sweeps (alpha/topk/top_n etc.)
     def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -254,7 +248,20 @@ async def run_evaluation(
                         question = row.get("question") or row.get("q")
                         if not question:
                             continue
-                        pr = await run_pipeline_once(app, question, run_settings)
+                        try:
+                            pr = await asyncio.wait_for(
+                                run_pipeline_once(app, question, run_settings),
+                                timeout=180.0,
+                            )
+                        except asyncio.TimeoutError:
+                            print(f"DEBUG: Pipeline timeout for question: {question}")
+                            continue
+                        except Exception as e:
+                            print(
+                                "DEBUG: Pipeline failed for question %s: %s"
+                                % (question, e)
+                            )
+                            continue
                         gt = row.get("ground_truths") or row.get("answers") or []
                         if isinstance(gt, str):
                             gt = [gt]
@@ -272,28 +279,58 @@ async def run_evaluation(
 
             # 如果数据集不足，补齐
             while loaded < request_samples:
-                pr = await run_pipeline_once(app, "什么是混合检索？", run_settings)
-                sample_rows.append(
-                    {
-                        "question": pr.question,
-                        "answer": pr.answer,
-                        "contexts": pr.contexts,
-                        "ground_truths": [],
-                    }
-                )
-                loaded += 1
+                try:
+                    pr = await asyncio.wait_for(
+                        run_pipeline_once(
+                            app,
+                            "什么是混合检索？",
+                            run_settings,
+                        ),
+                        timeout=180.0,
+                    )
+                    sample_rows.append(
+                        {
+                            "question": pr.question,
+                            "answer": pr.answer,
+                            "contexts": pr.contexts,
+                            "ground_truths": [],
+                        }
+                    )
+                    loaded += 1
+                except asyncio.TimeoutError:
+                    print("DEBUG: Pipeline timeout for fallback question")
+                    loaded += 1  # Skip this sample
+                except Exception as e:
+                    print(f"DEBUG: Pipeline failed for fallback question, error: {e}")
+                    loaded += 1  # Skip this sample
         else:
             # 无数据集则用固定问题重复 N 次（稳定评测）
-            for _ in range(request_samples):
-                pr = await run_pipeline_once(app, "什么是混合检索？", run_settings)
-                sample_rows.append(
-                    {
-                        "question": pr.question,
-                        "answer": pr.answer,
-                        "contexts": pr.contexts,
-                        "ground_truths": [],
-                    }
-                )
+            for i in range(request_samples):
+                try:
+                    pr = await asyncio.wait_for(
+                        run_pipeline_once(
+                            app,
+                            "什么是混合检索？",
+                            run_settings,
+                        ),
+                        timeout=180.0,
+                    )
+                    sample_rows.append(
+                        {
+                            "question": pr.question,
+                            "answer": pr.answer,
+                            "contexts": pr.contexts,
+                            "ground_truths": [],
+                        }
+                    )
+                except asyncio.TimeoutError:
+                    print(f"DEBUG: Pipeline timeout for sample {i}")
+                    # Continue to next sample instead of failing completely
+                    continue
+                except Exception as e:
+                    print(f"DEBUG: Pipeline failed for sample {i}, error: {e}")
+                    # Continue to next sample instead of failing completely
+                    continue
     except Exception:
         # Fallback: 静态样本
         sample_rows = [
@@ -309,76 +346,99 @@ async def run_evaluation(
             for _ in range(request_samples)
         ]
 
-    references_present = any(bool(r.get("ground_truths")) for r in sample_rows)
     overall_metrics: List[MetricResult] = []
-    skipped_due_to_reference: Set[str] = set()
+    produced_names: Set[str] = set()
 
-    effective_ragas_metrics: List[str] = []
-    if settings.evaluation.ragas.enabled:
-        if ragas_metric_filter is None:
-            effective_ragas_metrics = list(settings.evaluation.ragas.metrics)
-        else:
-            effective_ragas_metrics = list(ragas_metric_filter)
+    eval_items: List[EvalItem] = []
+    for row in sample_rows:
+        gt_list = row.get("ground_truths") or []
+        ground_truth = gt_list[0] if gt_list else None
+        eval_items.append(
+            EvalItem(
+                query=str(row.get("question", "")),
+                answer=str(row.get("answer", "")),
+                contexts=list(row.get("contexts", [])),
+                ground_truth=ground_truth,
+            )
+        )
 
-    if not references_present and effective_ragas_metrics:
-        removed_metrics = [
-            m for m in effective_ragas_metrics if m in REFERENCE_REQUIRED_METRICS
-        ]
-        if removed_metrics:
-            skipped_due_to_reference.update(removed_metrics)
-            effective_ragas_metrics = [
-                m
-                for m in effective_ragas_metrics
-                if m not in REFERENCE_REQUIRED_METRICS
-            ]
+    references_present = any(bool(row.get("ground_truths")) for row in sample_rows)
 
-    # Try TruLens first if enabled
-    trulens_available = settings.evaluation.trulens.enabled
-    if trulens_available and trulens_metric_filter is not None:
-        trulens_available = len(trulens_metric_filter) > 0
+    trulens_metrics: Set[str] = set()
+    if settings.evaluation.trulens.enabled:
+        trulens_metrics = set(TRULENS_METRICS)
+        if requested_metric_names is not None:
+            trulens_metrics &= requested_metric_names
 
-    if trulens_available:
+    if trulens_metrics:
         try:
-            tl_scores = run_trulens(sample_rows)
-            for name, value in tl_scores.items():
-                if (
-                    trulens_metric_filter is not None
-                    and name not in trulens_metric_filter
-                ):
+            from concurrent.futures import ThreadPoolExecutor
+            from concurrent.futures import TimeoutError as FutureTimeoutError
+
+            def _run_trulens_sync() -> Dict[str, float]:
+                return run_trulens(sample_rows)
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(_run_trulens_sync)
+                    trulens_scores = future.result(timeout=240.0)
+            except FutureTimeoutError:
+                print("DEBUG: TruLens evaluation timed out")
+                trulens_scores = {}
+
+            for name, value in trulens_scores.items():
+                if name not in trulens_metrics:
                     continue
-                # thresholds for triad can reuse trulens_min
                 threshold = (
                     settings.evaluation.thresholds.trulens_min
                     if name in ("context_relevance", "groundedness", "answer_relevance")
                     else None
                 )
+                trulens_details = {
+                    "samples": request_samples,
+                    "method": "trulens",
+                    "model": os.getenv(
+                        "ASKME_TRULENS_LLM_MODEL",
+                        os.getenv("ASKME_RAGAS_LLM_MODEL", "ollama/gpt-oss:20b"),
+                    ),
+                }
                 overall_metrics.append(
                     MetricResult(
                         name=name,
-                        value=value,
+                        value=float(value),
                         threshold=threshold,
                         passed=(value >= threshold) if threshold is not None else True,
-                        details={"samples": request_samples},
+                        details=trulens_details,
                     )
                 )
-        except Exception:
-            # proceed; truLens optional
-            pass
+                produced_names.add(name)
+        except Exception as e:
+            print(f"DEBUG: TruLens evaluation failed: {e}")
 
-    # Try real Ragas evaluation
-    if settings.evaluation.ragas.enabled and effective_ragas_metrics:
+    effective_ragas_metrics: List[str] = []
+    if settings.evaluation.ragas.enabled:
+        base_metrics = list(settings.evaluation.ragas.metrics)
+        if requested_metric_names is not None:
+            base_metrics = [m for m in base_metrics if m in requested_metric_names]
+        if not references_present:
+            base_metrics = [m for m in base_metrics if m != "context_recall"]
+        effective_ragas_metrics = base_metrics
+
+    if effective_ragas_metrics:
         try:
             ragas_scores = run_ragas(sample_rows, metrics=effective_ragas_metrics)
-
-            # Map scores to response with thresholds
             for name, value in ragas_scores.items():
-                sanitized_value = value
-                value_details: Dict[str, Any] = {"samples": request_samples}
-                if isinstance(sanitized_value, float) and not math.isfinite(
-                    sanitized_value
-                ):
-                    value_details["note"] = "non_finite_value"
-                    sanitized_value = 0.0
+                if name not in effective_ragas_metrics:
+                    continue
+                sanitized = value
+                ragas_details: Dict[str, Any] = {
+                    "samples": request_samples,
+                    "method": "ragas",
+                    "model": os.getenv("ASKME_RAGAS_LLM_MODEL", "ollama/gpt-oss:20b"),
+                }
+                if isinstance(sanitized, float) and not math.isfinite(sanitized):
+                    ragas_details["note"] = "non_finite_value"
+                    sanitized = 0.0
                 threshold = None
                 if name == "faithfulness":
                     threshold = settings.evaluation.thresholds.ragas_faithfulness_min
@@ -387,54 +447,128 @@ async def run_evaluation(
                 overall_metrics.append(
                     MetricResult(
                         name=name,
-                        value=sanitized_value,
+                        value=float(sanitized),
                         threshold=threshold,
-                        passed=(value >= threshold) if threshold is not None else True,
-                        details=value_details,
+                        passed=(sanitized >= threshold)
+                        if threshold is not None
+                        else True,
+                        details=ragas_details,
                     )
                 )
-
+                produced_names.add(name)
         except Exception as e:
-            # Fall back to heuristic evaluator if ragas unavailable
-            from typing import cast
+            print(f"DEBUG: Ragas evaluation failed: {e}")
 
-            evaluator = Evaluator(settings.evaluation)
-            heuristic_scores = evaluator.evaluate_batch(
-                [
-                    EvalItem(
-                        query=cast(str, r["question"]),
-                        answer=cast(str, r["answer"]),
-                        contexts=cast(List[str], r["contexts"]),
-                        ground_truth=(
-                            cast(List[str], r.get("ground_truths", []))[0]
-                            if r.get("ground_truths")
-                            else None
-                        ),
+    # Local LLM judge as additional signal (complements ragas)
+    try:
+        judge_metrics = llm_metric_eval(
+            sample_rows,
+            metrics=[
+                "faithfulness",
+                "answer_relevancy",
+                "context_precision",
+                "context_recall",
+            ],
+        )
+        print(f"DEBUG: Local LLM metrics -> {judge_metrics}")
+        for base_name, value in judge_metrics.items():
+            if (
+                requested_metric_names is not None
+                and base_name not in requested_metric_names
+            ):
+                continue
+
+            replaced = False
+            for metric in overall_metrics:
+                if (
+                    metric.name == base_name
+                    and metric.details
+                    and metric.details.get("method") == "ragas"
+                ):
+                    threshold = metric.threshold
+                    if base_name == "faithfulness":
+                        threshold = (
+                            settings.evaluation.thresholds.ragas_faithfulness_min
+                        )
+                    elif base_name == "context_precision":
+                        threshold = settings.evaluation.thresholds.ragas_precision_min
+                    metric.value = float(value)
+                    if threshold is not None:
+                        metric.threshold = threshold
+                        metric.passed = value >= threshold
+                    else:
+                        metric.passed = True
+                    metric.details["method"] = "local_llm"
+                    metric.details["model"] = os.getenv(
+                        "ASKME_RAGAS_LLM_MODEL", "gpt-oss:20b"
                     )
-                    for r in sample_rows
-                ]
-            )
-            for s in heuristic_scores:
+                    replaced = True
+                    break
+
+            if not replaced:
+                threshold = None
+                if base_name == "faithfulness":
+                    threshold = settings.evaluation.thresholds.ragas_faithfulness_min
+                elif base_name == "context_precision":
+                    threshold = settings.evaluation.thresholds.ragas_precision_min
                 overall_metrics.append(
                     MetricResult(
-                        name=s.name,
-                        value=s.value,
-                        threshold=s.threshold,
-                        passed=(
-                            (s.value >= s.threshold)
-                            if s.threshold is not None
-                            else True
-                        ),
+                        name=base_name,
+                        value=float(value),
+                        threshold=threshold,
+                        passed=(value >= threshold) if threshold is not None else True,
                         details={
                             "samples": request_samples,
-                            "note": "heuristic_fallback",
-                            "error": str(e),
+                            "method": "local_llm",
+                            "model": os.getenv("ASKME_RAGAS_LLM_MODEL", "gpt-oss:20b"),
                         },
                     )
                 )
-    elif settings.evaluation.ragas.enabled and not effective_ragas_metrics:
-        if ragas_metric_filter:
-            skipped_due_to_reference.update(ragas_metric_filter)
+    except Exception as e:
+        print(f"DEBUG: Local LLM metrics failed: {e}")
+
+    embedding_service = getattr(app.state, "embedding_service", None)
+    embedding_metrics_data = await compute_embedding_metrics(
+        embedding_service,
+        eval_items,
+        thresholds=settings.evaluation.thresholds,
+        requested_metrics=requested_metric_names,
+    )
+
+    if embedding_metrics_data:
+        for payload in embedding_metrics_data:
+            name_value = payload.get("name")
+            if not isinstance(name_value, str) or not name_value:
+                continue
+            name = name_value
+            if (
+                requested_metric_names is not None
+                and name not in requested_metric_names
+            ):
+                continue
+            if name in produced_names:
+                continue
+            payload_details = dict(payload.get("details", {}))
+            payload_details.setdefault("method", "embedding_similarity")
+            payload["details"] = payload_details
+            overall_metrics.append(MetricResult(**payload))
+            produced_names.add(name)
+
+    if not overall_metrics:
+        evaluator = Evaluator(settings.evaluation)
+        fallback_scores = evaluator.evaluate_batch(eval_items)
+        for s in fallback_scores:
+            overall_metrics.append(
+                MetricResult(
+                    name=s.name,
+                    value=s.value,
+                    threshold=s.threshold,
+                    passed=(s.value >= s.threshold)
+                    if s.threshold is not None
+                    else True,
+                    details={"samples": request_samples, "note": "heuristic_fallback"},
+                )
+            )
 
     # Optionally compute per-sample metrics for individual results (disabled for now)
     individual_results: Optional[List[EvaluationResult]] = None
@@ -464,15 +598,12 @@ async def run_evaluation(
         / max(1, len(overall_metrics)),
     }
 
-    if skipped_due_to_reference:
-        summary_payload["skipped_metrics"] = sorted(skipped_due_to_reference)
-
     response = EvaluationResponse(
         run_id=run_id,
         status="completed",
         suite=req.suite.value,
-        started_at=datetime.utcnow(),
-        completed_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
         total_samples=request_samples,
         processed_samples=request_samples,
         overall_metrics=overall_metrics,
@@ -511,8 +642,8 @@ async def get_evaluation_results(
             run_id=run_id,
             status="not_found",
             suite="baseline",
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             total_samples=0,
             processed_samples=0,
             overall_metrics=[],

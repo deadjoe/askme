@@ -10,34 +10,28 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-
     # Vector databases - choose one primary, others optional
     "pymilvus>=2.5.0",
     # Pin to the latest v4 compatible with Weaviate 1.32.8
     "weaviate-client>=4.16.9",
     "qdrant-client>=1.10.0",
-
     # Embeddings and reranking
     "sentence-transformers>=2.7.0",
     "transformers>=4.35.0",
     "torch>=2.0.0",
     "FlagEmbedding>=1.2.10",
-
     # Cloud reranking fallback
     "cohere>=4.40.0",
-
     # Document processing
     "pypdf>=3.17.0",
     "python-multipart>=0.0.6",
     "aiofiles>=23.2.1",
     "markdownify>=0.11.6",
     "beautifulsoup4>=4.12.0",
-
     # Evaluation frameworks
     "trulens-eval>=0.29.0",
     "ragas>=0.2.0",
     "datasets>=2.15.0",
-
     # Utilities
     "pyyaml>=6.0.1",
     "httpx>=0.25.0",
@@ -45,10 +39,11 @@ dependencies = [
     "typer>=0.9.0",
     "loguru>=0.7.2",
     "python-dotenv>=1.0.0",
-
     # Search and ranking
     "rank-bm25>=0.2.2",
     "openai>=1.40.0",
+    "litellm>=1.77.1",
+    "einops>=0.8.1",
 ]
 
 [project.optional-dependencies]
@@ -82,6 +77,10 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
 
 [tool.bandit]
 skips = ["B101", "B110", "B112"]

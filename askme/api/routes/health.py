@@ -2,7 +2,7 @@
 Health check endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
@@ -39,7 +39,7 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
 
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         version="0.1.0",
         components=components,
     )
@@ -61,7 +61,7 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> Dict[st
     return {
         "ready": all_ready,
         "checks": checks,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -70,5 +70,5 @@ async def liveness_check() -> Dict[str, Any]:
     """Liveness check for container orchestration."""
     return {
         "alive": True,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }

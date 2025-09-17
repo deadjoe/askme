@@ -100,7 +100,7 @@ class EmbeddingConfig(BaseSettings):
 class RerankConfig(BaseSettings):
     """Reranking configuration."""
 
-    local_model: str = "BAAI/bge-reranker-v2.5-gemma2-lightweight"
+    local_model: str = "BAAI/bge-reranker-v2-m3"
     local_enabled: bool = True
     local_batch_size: int = 16
     local_max_length: int = 1024
@@ -226,7 +226,7 @@ class EvaluationConfig(BaseSettings):
 class APIConfig(BaseSettings):
     """API server configuration."""
 
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec B104 - expose API for container networking
     port: int = 8080
     workers: int = 1
     reload: bool = False
