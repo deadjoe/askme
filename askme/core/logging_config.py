@@ -4,6 +4,7 @@ Logging configuration setup.
 
 import logging
 import sys
+import warnings
 from pathlib import Path
 from types import FrameType
 from typing import Optional
@@ -40,6 +41,9 @@ class InterceptHandler(logging.Handler):
 
 def setup_logging(settings: Settings) -> None:
     """Setup logging configuration."""
+
+    # Filter SWIG deprecation warnings from BGE models
+    warnings.filterwarnings("ignore", message=".*SwigPy.*has no __module__ attribute.*")
 
     # Remove default Loguru handler
     logger.remove()

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class BGEEmbeddingService:
-    """BGE-M3 embedding service supporting dense, sparse, and multi-vector representations."""
+    """BGE-M3 embedding service with dense, sparse, and multi-vector support."""
 
     def __init__(self, config: EmbeddingConfig):
         self.config = config
@@ -414,13 +414,15 @@ class BGEEmbeddingService:
                 if hasattr(torch, "cuda") and torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
+                # Explicitly delete model as suggested by FlagEmbedding developers
+                del self.model
                 self.model = None
                 self._is_initialized = False
 
-            # Shutdown thread pool with timeout
-            if hasattr(self, "_executor"):
+            # Shutdown thread pool with timeout (restore original logic)
+            if hasattr(self, "_executor") and self._executor is not None:
                 logger.info("Shutting down BGE embedding thread pool...")
-                # Don't wait indefinitely
+                # Use original non-blocking approach with timeout
                 self._executor.shutdown(wait=False)
 
                 # Give it a moment to shutdown gracefully
@@ -501,7 +503,7 @@ class EmbeddingManager:
             return await self.embedding_service.encode_query(query, instruction)
 
         # Check cache
-        cache_key = f"query:{instruction or ''}:{query}"
+        cache_key = f"query: {instruction or ''}: {query}"
         cache_hash = self._hash_text(cache_key)
 
         if cache_hash in self._cache:
@@ -520,7 +522,7 @@ class EmbeddingManager:
         """Generate hash for text caching."""
         import hashlib
 
-        return hashlib.md5(text.encode()).hexdigest()
+        return hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
 
     def clear_cache(self) -> None:
         """Clear the embedding cache."""
