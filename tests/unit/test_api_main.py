@@ -13,13 +13,13 @@ def _build_patched_app():
     # Patch heavy components referenced inside lifespan
     with (
         patch("askme.api.main.BGEEmbeddingService", autospec=True) as _emb,
-        patch("askme.api.main.MilvusRetriever", autospec=True) as _milvus,
-        patch("askme.api.main.WeaviateRetriever", autospec=True) as _weaviate,
+        patch("askme.api.main.MilvusRetriever", autospec=True),
+        patch("askme.api.main.WeaviateRetriever", autospec=True),
         patch("askme.api.main.RerankingService", autospec=True) as _rr,
         patch("askme.api.main.IngestionService", autospec=True) as _ing,
         patch("askme.api.main.SimpleTemplateGenerator", autospec=True) as _tmpl,
-        patch("askme.api.main.LocalOllamaGenerator", autospec=True) as _ollama,
-        patch("askme.api.main.OpenAIChatGenerator", autospec=True) as _openai,
+        patch("askme.api.main.LocalOllamaGenerator", autospec=True),
+        patch("askme.api.main.OpenAIChatGenerator", autospec=True),
         patch("askme.api.main.setup_logging", autospec=True),
     ):
         # Use simple template generator by default

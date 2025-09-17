@@ -87,6 +87,10 @@ class BGEEmbeddingService:
         if not self._is_initialized:
             await self.initialize()
 
+        # Check model is initialized before processing
+        if self.model is None:
+            raise RuntimeError("Embedding model not initialized")
+
         batch_size = batch_size or self.config.batch_size
 
         try:
@@ -99,10 +103,6 @@ class BGEEmbeddingService:
                 logger.debug(
                     f"Processing batch {i//batch_size + 1}: {len(batch_texts)} texts"
                 )
-
-                # Encode batch with BGE-M3 in thread pool to avoid blocking
-                if self.model is None:
-                    raise RuntimeError("Embedding model not initialized")
 
                 loop = asyncio.get_event_loop()
                 batch_results = await loop.run_in_executor(

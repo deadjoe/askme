@@ -420,7 +420,8 @@ class TestMilvusRetrieverCore:
                 mock_collection = MagicMock()
                 retriever.collection = mock_collection
 
-                # Mock successful deletion call (implementation doesn't check delete_count)
+                # Mock successful deletion call
+                # (implementation doesn't check delete_count)
                 mock_result = MagicMock()
                 mock_result.delete_count = 0
                 mock_collection.delete.return_value = mock_result
@@ -449,12 +450,8 @@ class TestMilvusRetrieverHybridSearch:
                 with patch(
                     "askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", True
                 ):
-                    with patch(
-                        "askme.retriever.milvus_retriever.AnnSearchRequest"
-                    ) as mock_ann_req:
-                        with patch(
-                            "askme.retriever.milvus_retriever.RRFRanker"
-                        ) as mock_rrf:
+                    with patch("askme.retriever.milvus_retriever.AnnSearchRequest"):
+                        with patch("askme.retriever.milvus_retriever.RRFRanker"):
                             # Mock search result
                             mock_hit = MagicMock()
                             mock_hit.id = "hybrid_doc"
