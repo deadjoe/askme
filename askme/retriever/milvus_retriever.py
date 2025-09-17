@@ -45,7 +45,7 @@ class MilvusRetriever(VectorRetriever):
         self.password = config.get("password", "")
         self.secure = config.get("secure", False)
 
-        self.connection_name = f"askme_conn_{hash(f'{self.host}:{self.port}')}"
+        self.connection_name = f"askme_conn_{hash(f'{self.host}: {self.port}')}"
         self.collection: Optional[Collection] = None
         self.dimension = config.get("dimension", 1024)
 
@@ -60,7 +60,7 @@ class MilvusRetriever(VectorRetriever):
                 password=self.password,
                 secure=self.secure,
             )
-            logger.info(f"Connected to Milvus at {self.host}:{self.port}")
+            logger.info(f"Connected to Milvus at {self.host}: {self.port}")
 
             # Try to load existing collection
             if utility.has_collection(self.collection_name, using=self.connection_name):
@@ -392,7 +392,8 @@ class MilvusRetriever(VectorRetriever):
                     )
 
                 logger.debug(
-                    f"Native RRF hybrid search returned {len(retrieval_results)} results"
+                    f"Native RRF hybrid search returned "
+                    f"{len(retrieval_results)} results"
                 )
                 return retrieval_results
 
@@ -509,7 +510,7 @@ class MilvusRetriever(VectorRetriever):
             raise RuntimeError("Collection not initialized")
 
         try:
-            result = self.collection.delete(expr=f'id == "{doc_id}"')
+            self.collection.delete(expr=f'id == "{doc_id}"')
             self.collection.flush()
 
             logger.info(f"Deleted document {doc_id}")

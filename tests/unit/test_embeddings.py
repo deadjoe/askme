@@ -410,7 +410,7 @@ class TestBGEEmbeddingServiceAdvanced:
         service.model = mock_model
         service._is_initialized = True
 
-        result = await service.encode_query(
+        await service.encode_query(
             "machine learning",
             "Represent this sentence for searching relevant passages:",
         )
@@ -420,7 +420,8 @@ class TestBGEEmbeddingServiceAdvanced:
         call_args = mock_model.encode.call_args[0]
         assert (
             call_args[0][0]
-            == "Represent this sentence for searching relevant passages: machine learning"
+            == "Represent this sentence for searching relevant passages: "
+            "machine learning"
         )
 
     @patch("askme.core.embeddings.BGEM3FlagModel")

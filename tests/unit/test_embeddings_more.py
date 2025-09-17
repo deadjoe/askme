@@ -40,8 +40,8 @@ def test_convert_sparse_embedding_variants():
     d = svc._convert_sparse_embedding({"1": 0.5, 2: 0.3})
     assert d[1] == 0.5 and d[2] == 0.3
     # list -> indices of nonzero
-    l = svc._convert_sparse_embedding([0.0, 0.1, 0.0, 0.2])
-    assert l == {1: 0.1, 3: 0.2}
+    result_list = svc._convert_sparse_embedding([0.0, 0.1, 0.0, 0.2])
+    assert result_list == {1: 0.1, 3: 0.2}
 
     # unknown -> {}
     class _X:
