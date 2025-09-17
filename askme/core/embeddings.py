@@ -87,6 +87,10 @@ class BGEEmbeddingService:
         if not self._is_initialized:
             await self.initialize()
 
+        # Handle empty input early
+        if not texts:
+            return []
+
         # Check model is initialized before processing
         if self.model is None:
             raise RuntimeError("Embedding model not initialized")
