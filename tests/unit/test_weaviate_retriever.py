@@ -686,7 +686,7 @@ class TestWeaviateRetrieverCore:
             mock_by_property.contains_any.return_value = mock_equal
 
             filters = {"source": "doc.pdf", "tags": ["tag1", "tag2"]}
-            where_filter = retriever._build_where(filters)
+            retriever._build_where(filters)
 
             # Should create multiple conditions
             assert mock_filter.by_property.call_count >= 2

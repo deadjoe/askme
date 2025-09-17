@@ -49,7 +49,8 @@ class WeaviateRetriever(VectorRetriever):
                 http_secure = u.scheme == "https"
                 # weaviate-client v4 requires both HTTP and gRPC params
                 grpc_host = host
-                # Heuristic: if HTTP exposed at 8081, expose gRPC at 8082 (docker run mapping); else default 50051
+                # Heuristic: if HTTP exposed at 8081, expose gRPC at 8082
+                # (docker run mapping); else default 50051
                 grpc_port = port + 1 if port in (8080, 8081) else 50051
                 grpc_secure = http_secure
                 self.client = weaviate.connect_to_custom(
@@ -126,7 +127,8 @@ class WeaviateRetriever(VectorRetriever):
             # dynamic batching
             import uuid as _uuid
 
-            # dynamic() may be a coroutine in tests (AsyncMock) or return an async/sync context manager.
+            # dynamic() may be a coroutine in tests (AsyncMock) or return
+            # an async/sync context manager.
             mgr = col.batch.dynamic()
             try:
                 from inspect import iscoroutine
@@ -151,7 +153,8 @@ class WeaviateRetriever(VectorRetriever):
                             "content": doc.content,
                             "title": doc.metadata.get("title", doc.id),
                         }
-                        # include metadata into properties (shallow merge; avoid collisions)
+                        # include metadata into properties
+                        # (shallow merge; avoid collisions)
                         for k, v in doc.metadata.items():
                             if k not in props and isinstance(
                                 v, (str, int, float, bool)
@@ -183,7 +186,8 @@ class WeaviateRetriever(VectorRetriever):
                             "content": doc.content,
                             "title": doc.metadata.get("title", doc.id),
                         }
-                        # include metadata into properties (shallow merge; avoid collisions)
+                        # include metadata into properties
+                        # (shallow merge; avoid collisions)
                         for k, v in doc.metadata.items():
                             if k not in props and isinstance(
                                 v, (str, int, float, bool)
@@ -250,8 +254,9 @@ class WeaviateRetriever(VectorRetriever):
         topk: int = 50,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[RetrievalResult]:
-        # Weaviate BM25 expects a raw text query; we cannot reconstruct from sparse terms reliably.
-        # Use empty result to avoid misleading behavior; hybrid() path should be preferred.
+        # Weaviate BM25 expects a raw text query; we cannot reconstruct
+        # from sparse terms reliably. Use empty result to avoid misleading
+        # behavior; hybrid() path should be preferred.
         return []
 
     async def hybrid_search(
@@ -301,7 +306,8 @@ class WeaviateRetriever(VectorRetriever):
     async def get_document(self, doc_id: str) -> Optional[Document]:
         col = await self._ensure_collection()
         try:
-            # Allow lookup by original doc_id (property) or by uuid; prefer property lookup
+            # Allow lookup by original doc_id (property) or by uuid;
+            # prefer property lookup
             try:
                 where = Filter.by_property("doc_id").equal(doc_id)
                 res = col.query.fetch_objects(

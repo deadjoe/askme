@@ -234,7 +234,8 @@ class IngestionService:
         self._running_tasks[task_id] = processing_task
 
         logger.info(
-            f"Started directory ingestion task {task_id}: {dir_path} ({file_count} files)"
+            f"Started directory ingestion task {task_id}: {dir_path} "
+            f"({file_count} files)"
         )
         return task_id
 
@@ -408,7 +409,8 @@ class IngestionService:
             batch_texts = [doc.content for doc in batch]
 
             logger.debug(
-                f"Processing embedding batch {i//batch_size + 1}: {len(batch)} documents"
+                f"Processing embedding batch {i//batch_size + 1}: "
+                f"{len(batch)} documents"
             )
 
             # Generate embeddings
@@ -557,7 +559,8 @@ class IngestionService:
                     )
                 except asyncio.TimeoutError:
                     logger.warning(
-                        "Some ingestion tasks did not complete within timeout, forcing shutdown"
+                        "Some ingestion tasks did not complete within timeout, "
+                        "forcing shutdown"
                     )
 
             # Forceful shutdown of thread pool with timeout

@@ -13,12 +13,13 @@ from pathlib import Path
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from askme.core.config import EmbeddingConfig, RerankConfig, Settings
-from askme.core.embeddings import BGEEmbeddingService
-from askme.ingest.document_processor import DocumentProcessingPipeline
-from askme.ingest.ingest_service import IngestionService
-from askme.rerank.rerank_service import RerankingService
-from askme.retriever.milvus_retriever import MilvusRetriever
+# Import after path modification to avoid E402
+from askme.core.config import EmbeddingConfig, RerankConfig, Settings  # noqa: E402
+from askme.core.embeddings import BGEEmbeddingService  # noqa: E402
+from askme.ingest.document_processor import DocumentProcessingPipeline  # noqa: E402
+from askme.ingest.ingest_service import IngestionService  # noqa: E402
+from askme.rerank.rerank_service import RerankingService  # noqa: E402
+from askme.retriever.milvus_retriever import MilvusRetriever  # noqa: E402
 
 
 async def test_basic_pipeline():
@@ -111,7 +112,7 @@ The system implements a complete RAG pipeline with:
         reranking_service = RerankingService(rerank_config)
 
         service_info = reranking_service.get_service_info()
-        print(f"   ✓ Reranking service configured")
+        print("   ✓ Reranking service configured")
         print(f"   ✓ Available methods: {service_info['available_methods']}")
         print(f"   ✓ Top N: {service_info['config']['top_n']}")
 
@@ -129,8 +130,8 @@ The system implements a complete RAG pipeline with:
         }
         retriever = MilvusRetriever(milvus_config)
 
-        print(f"   ✓ Milvus retriever configured")
-        print(f"   ✓ Connection: {retriever.host}:{retriever.port}")
+        print("   ✓ Milvus retriever configured")
+        print(f"   ✓ Connection: {retriever.host}: {retriever.port}")
         print(f"   ✓ Collection: {retriever.collection_name}")
 
     except Exception as e:
@@ -143,8 +144,8 @@ The system implements a complete RAG pipeline with:
         from askme.api.main import create_app
         from askme.api.routes import evaluation, health, ingest, query
 
-        print(f"   ✓ FastAPI application can be created")
-        print(f"   ✓ All API routes imported successfully")
+        print("   ✓ FastAPI application can be created")
+        print("   ✓ All API routes imported successfully")
 
     except Exception as e:
         print(f"   ❌ API components test failed: {e}")
@@ -153,7 +154,8 @@ The system implements a complete RAG pipeline with:
     print("\n🎉 All tests passed! askme pipeline is ready for deployment.")
     print("\n📋 Next steps:")
     print(
-        "   1. Install and start Milvus: docker-compose -f docker/docker-compose.yaml up -d milvus"
+        "   1. Install and start Milvus: "
+        "docker-compose -f docker/docker-compose.yaml up -d milvus"
     )
     print("   2. Start the API server: uvicorn askme.api.main:app --reload --port 8080")
     print("   3. Test document ingestion: ./scripts/ingest.sh /path/to/documents")
