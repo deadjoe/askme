@@ -16,7 +16,7 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelli
 - **Intelligent Reranking**: Local BGE-reranker-v2.5 with Cohere Rerank 3.5 fallback for optimal relevance scoring
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
 - **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
-- **Comprehensive Evaluation**: TruLens RAG Triad and Ragas v0.2+ metrics with A/B testing capabilities
+- **Comprehensive Evaluation**: TruLens RAG Triad, Ragas v0.2+, offline local LLM judges, and embedding similarity metrics with A/B testing capabilities
 - **Production Ready**: FastAPI service with health checks, Docker deployment, monitoring, and extensive configuration
 
 ## Architecture
@@ -30,9 +30,9 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 
 - **Embeddings**: BGE-M3 multilingual model (dense + sparse support)
 - **Vector Database**: Weaviate (primary), Milvus 2.5+/Qdrant alternatives with hybrid search support
-- **Reranking**: BAAI/bge-reranker-v2.5-gemma2-lightweight (local), Cohere Rerank 3.5 (cloud fallback)
+- **Reranking**: BAAI/bge-reranker-v2-m3 cross-encoder (local), Cohere Rerank 3.5 (cloud fallback)
 - **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
-- **Evaluation**: TruLens + Ragas frameworks with automated quality thresholds
+- **Evaluation**: TruLens + Ragas with local embedding metrics, configurable LLM judges, and automated quality thresholds
 - **Generation**: OpenAI-compatible, local Ollama, or template-based approaches
 
 ## Quick Start
@@ -72,6 +72,9 @@ ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
 # Retrieve documents only (for debugging/tuning)
 ./scripts/retrieve.sh "hybrid search techniques" --topk=25 --alpha=0.7
 
+# Quick end-to-end smoke test (requires curl + jq)
+./query_test.sh "Who created BM25?"
+
 # Run evaluation
 ./scripts/evaluate.sh --suite=baseline
 ```
@@ -99,14 +102,15 @@ embedding:
 
 # Reranking
 rerank:
-  local_model: BAAI/bge-reranker-v2.5-gemma2-lightweight
+  local_model: BAAI/bge-reranker-v2-m3
   local_enabled: true
   cohere_enabled: false  # Enable via ASKME_ENABLE_COHERE=1
   top_n: 8
 
 # Generation
 generation:
-  provider: simple       # simple | ollama | openai
+  provider: ollama       # simple | ollama | openai
+  ollama_model: gpt-oss:20b
   ollama_endpoint: http://localhost:11434
   openai_model: gpt-4o-mini
 ```
@@ -114,8 +118,12 @@ generation:
 ### Environment Variables
 
 - `ASKME_SKIP_HEAVY_INIT=1` - Skip heavy service initialization during development
+- `ASKME_API_URL` / `ASKME_API_KEY` - Target API base URL and optional auth for CLI scripts
 - `ASKME_ENABLE_COHERE=1` + `COHERE_API_KEY` - Enable Cohere reranking
 - `ASKME_ENABLE_OLLAMA=1` - Enable local Ollama generation
+- `ASKME_RAGAS_LLM_MODEL` - Override local LLM judge used for evaluations (default `gpt-oss:20b`)
+- `ASKME_RAGAS_EMBED_MODEL` - Override embedding model for Ragas metrics (default `BAAI/bge-m3`)
+- `ASKME_TRULENS_LLM_MODEL` - Override TruLens evaluation model (falls back to `ASKME_RAGAS_LLM_MODEL`)
 - `OPENAI_BASE_URL` / `OPENAI_API_KEY` - OpenAI-compatible endpoints for evaluation
 
 ## API Reference
@@ -145,6 +153,14 @@ generation:
 - `GET /eval/runs` - List recent evaluation runs
 - `DELETE /eval/runs/{run_id}` - Delete evaluation run
 - `GET /eval/metrics` - Available evaluation metrics
+
+#### Evaluation Toolkit
+
+- `./scripts/evaluate.sh` provides a unified CLI for starting suites, overriding retrieval parameters (`--alpha`, `--topk`, `--topn`), and choosing output formats (`text`, `json`, `table`).
+- Embedding similarity metrics run locally when `embedding_service` is available, adding groundedness, context precision/recall, and answer relevance without leaving the host.
+- Local LLM judge metrics (faithfulness, answer relevancy, context precision/recall) default to Ollama via the OpenAI-compatible API; override with `ASKME_RAGAS_LLM_MODEL`, `OPENAI_BASE_URL`, or standard OpenAI keys as needed.
+- TruLens metrics automatically fall back to LiteLLM/OpenAI providers and respect `ASKME_TRULENS_LLM_MODEL`, enabling fully offline evaluation when paired with Ollama.
+- Use `ASKME_RAGAS_EMBED_MODEL` to swap in alternative embedding backends for evaluation-only workloads without touching production retrieval settings.
 
 ### Example Query Request
 
