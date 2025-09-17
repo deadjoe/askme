@@ -52,7 +52,7 @@ embedding:
 # Reranking Configuration
 rerank:
   # Local reranker (primary)
-  local_model: "BAAI/bge-reranker-v2.5-gemma2-lightweight"
+  local_model: "BAAI/bge-reranker-v2-m3"
   local_enabled: true
   local_batch_size: 16
   local_max_length: 1024
@@ -169,7 +169,7 @@ evaluation:
 
 # API Configuration
 api:
-  host: "0.0.0.0"
+  host: "0.0.0.0"  # nosec B104 - intentional binding for containerized API
   port: 8080
   workers: 1
   reload: false

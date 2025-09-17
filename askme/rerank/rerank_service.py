@@ -8,18 +8,25 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-# 可选依赖：按需延迟导入，避免在未安装环境下阻塞其它功能
-try:
-    import numpy as _np
-except Exception:  # pragma: no cover
-    _np = None
-try:
-    import torch as _torch
-except Exception:  # pragma: no cover
-    _torch = None
-
 from askme.core.config import RerankConfig
 from askme.retriever.base import Document, RetrievalResult
+
+# 可选依赖：按需延迟导入，避免在未安装环境下阻塞其它功能
+_np: Any
+try:
+    import numpy as _np_module
+except Exception:  # pragma: no cover
+    _np = None
+else:
+    _np = _np_module
+
+_torch: Any
+try:
+    import torch as _torch_module
+except Exception:  # pragma: no cover
+    _torch = None
+else:
+    _torch = _torch_module
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +65,7 @@ class BGEReranker(BaseReranker):
 
     def __init__(self, config: RerankConfig):
         self.config = config
-        self.model = None
+        self.model: Any | None = None
         self.device = (
             "cuda"
             if (_torch and hasattr(_torch, "cuda") and _torch.cuda.is_available())
@@ -83,18 +90,25 @@ class BGEReranker(BaseReranker):
                     self.config.local_model,
                     use_fp16=(self.device != "cpu"),
                     device=self.device,
+                    trust_remote_code=True,
                 )
             except Exception as e:
                 msg = str(e)
-                if "trust_remote_code" in msg or "allow custom code" in msg:
+                if (
+                    "trust_remote_code" in msg
+                    or "allow custom code" in msg
+                    or "Unrecognized configuration class" in msg
+                ):
                     fallback = "BAAI/bge-reranker-base"
                     logger.warning(
-                        f"Local reranker requires trust_remote_code, falling back to {fallback}"
+                        "Local reranker requires trust_remote_code, falling back to %s",
+                        fallback,
                     )
                     self.model = FlagReranker(
                         fallback,
                         use_fp16=(self.device != "cpu"),
                         device=self.device,
+                        trust_remote_code=True,
                     )
                 else:
                     raise
@@ -141,11 +155,14 @@ class BGEReranker(BaseReranker):
                 batch_pairs = pairs[i : i + batch_size]
 
                 logger.debug(
-                    f"Reranking batch {i//batch_size + 1}: {len(batch_pairs)} pairs"
+                    "Reranking batch %s: %s pairs",
+                    (i // batch_size) + 1,
+                    len(batch_pairs),
                 )
 
                 # Get scores for this batch
-                assert self.model is not None
+                if self.model is None:
+                    raise RuntimeError("BGE reranker model is not initialized")
                 batch_scores = self.model.compute_score(batch_pairs)
 
                 # Handle single score vs list of scores
@@ -197,7 +214,9 @@ class BGEReranker(BaseReranker):
             final_results = rerank_results[:top_n]
 
             logger.info(
-                f"BGE reranking completed: {len(documents)} → {len(final_results)} documents"
+                "BGE reranking completed: %s → %s documents",
+                len(documents),
+                len(final_results),
             )
 
             return final_results
@@ -304,7 +323,9 @@ class CohereReranker(BaseReranker):
                 )
 
             logger.info(
-                f"Cohere reranking completed: {len(documents)} → {len(rerank_results)} documents"
+                "Cohere reranking completed: %s → %s documents",
+                len(documents),
+                len(rerank_results),
             )
 
             return rerank_results

@@ -7,6 +7,7 @@ Used by evaluation to produce answer/context dynamically for end-to-end scoring.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -71,11 +72,23 @@ async def run_pipeline_once(
 
     result_lists = []
     for q in query_list:
-        q_emb = await embedding_service.encode_query(q)
-        res = await retriever.hybrid_search(
-            q_emb["dense_embedding"], q_emb["sparse_embedding"], params
-        )
-        result_lists.append(res)
+        try:
+            # Add timeout protection for embedding service
+            q_emb = await asyncio.wait_for(
+                embedding_service.encode_query(q), timeout=30.0
+            )
+            # Add timeout protection for retrieval
+            res = await asyncio.wait_for(
+                retriever.hybrid_search(
+                    q_emb["dense_embedding"], q_emb["sparse_embedding"], params
+                ),
+                timeout=60.0,
+            )
+            result_lists.append(res)
+        except asyncio.TimeoutError:
+            print(f"DEBUG: Timeout during query processing for: {q}")
+            # Return empty result for this query to prevent complete failure
+            result_lists.append([])
 
     results = (
         SearchFusion.reciprocal_rank_fusion(result_lists, k=params.rrf_k)
@@ -83,9 +96,18 @@ async def run_pipeline_once(
         else result_lists[0]
     )
 
-    reranked = await reranking_service.rerank(
-        question, results, top_n=settings.rerank.top_n, prefer_local=True
-    )
+    # Add timeout protection for reranking
+    try:
+        reranked = await asyncio.wait_for(
+            reranking_service.rerank(
+                question, results, top_n=settings.rerank.top_n, prefer_local=True
+            ),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        print(f"DEBUG: Timeout during reranking for question: {question}")
+        # Use original results without reranking as fallback
+        reranked = results[: settings.rerank.top_n]
 
     # Build passages and citations
     citations: List[Dict[str, Any]] = []
@@ -113,7 +135,18 @@ async def run_pipeline_once(
             )
         )
 
-    answer = await generator.generate(question, passages)
+    # Add timeout protection for LLM generation (most critical blocking point)
+    try:
+        answer = await asyncio.wait_for(
+            generator.generate(question, passages), timeout=120.0
+        )
+    except asyncio.TimeoutError:
+        print(f"DEBUG: Timeout during LLM generation for question: {question}")
+        # Provide fallback answer to prevent complete pipeline failure
+        answer = f"[TIMEOUT] Unable to generate answer for: {question}"
+    except Exception as e:
+        print(f"DEBUG: Generation failed with error: {e}")
+        answer = f"[ERROR] Generation failed for: {question}"
 
     return PipelineResult(
         question=question,

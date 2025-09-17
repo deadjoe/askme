@@ -11,9 +11,11 @@ Requirements:
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 
 def _as_float_list(value: Any) -> List[float]:
@@ -23,7 +25,8 @@ def _as_float_list(value: Any) -> List[float]:
         return []
 
     if isinstance(value, (int, float)):
-        return [float(value)]
+        v = float(value)
+        return [v] if math.isfinite(v) else []
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         out: List[float] = []
@@ -40,7 +43,11 @@ def _as_float_list(value: Any) -> List[float]:
             if isinstance(arr, Iterable) and not isinstance(
                 arr, (str, bytes, bytearray)
             ):
-                return [float(v) for v in arr if isinstance(v, (int, float))]
+                return [
+                    float(v)
+                    for v in arr
+                    if isinstance(v, (int, float)) and math.isfinite(float(v))
+                ]
         except Exception:
             pass
 
@@ -48,7 +55,7 @@ def _as_float_list(value: Any) -> List[float]:
         try:
             mean_val = value.mean()
             if isinstance(mean_val, (int, float)):
-                return [float(mean_val)]
+                return [float(mean_val)] if math.isfinite(float(mean_val)) else []
         except Exception:
             pass
 
@@ -82,6 +89,12 @@ def _collect_metric_values(result: Any, aliases: Sequence[str]) -> List[float]:
             values = _extract_from_mapping(payload, aliases)
             if values:
                 return values
+        if isinstance(payload, list):
+            collected: List[float] = []
+            for item in payload:
+                collected.extend(_collect_metric_values(item, aliases))
+            if collected:
+                return collected
 
     # DataFrame-like objects
     columns = getattr(result, "columns", None)
@@ -144,125 +157,187 @@ def run_ragas(
     samples: List[Dict[str, Any]],
     metrics: Optional[List[str]] = None,
 ) -> Dict[str, float]:
-    restore_policy: Optional[asyncio.AbstractEventLoopPolicy] = None
+    # Set environment variables to reduce warnings
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+    # Import uvloop compatibility utilities
+    from askme.evals.uvloop_compat import (
+        patch_nest_asyncio_import,
+        run_in_thread_with_new_loop,
+    )
+
     try:
-        try:
-            policy = asyncio.get_event_loop_policy()
-            if type(policy).__module__.startswith("uvloop"):
-                restore_policy = policy
-                asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-        except Exception:
-            restore_policy = None
+        # Pre-patch nest_asyncio to handle uvloop
+        patch_nest_asyncio_import()
 
-        try:
-            try:
-                import nest_asyncio as nest_asyncio_module
-
-                _orig_apply = getattr(nest_asyncio_module, "apply", None)
-
-                if _orig_apply is not None:
-                    original_apply: Callable[..., Any] = _orig_apply
-
-                    def _safe_apply(*args: Any, **kwargs: Any) -> None:
-                        try:
-                            original_apply(*args, **kwargs)
-                        except ValueError as exc:
-                            if "Can't patch loop" not in str(exc):
-                                raise
-
-                    setattr(nest_asyncio_module, "apply", _safe_apply)
-            except Exception:
-                pass
-
+        # Import ragas components in uvloop-compatible way
+        def import_ragas() -> Dict[str, Any]:
+            print("DEBUG: Attempting to import datasets...")
             from datasets import Dataset
+
+            print("DEBUG: datasets import successful")
+
+            print("DEBUG: Attempting to import ragas...")
+            import ragas
+
+            version = getattr(ragas, "__version__", "unknown")
+            print(f"DEBUG: ragas version: {version}")
             from ragas import evaluate
+
+            print("DEBUG: ragas.evaluate import successful")
+
+            print("DEBUG: Attempting to import ragas metrics...")
             from ragas.metrics import (
                 answer_relevancy,
                 context_precision,
                 context_recall,
                 faithfulness,
             )
+
+            print("DEBUG: All ragas metrics imported successfully")
+
+            return {
+                "Dataset": Dataset,
+                "evaluate": evaluate,
+                "metrics": {
+                    "answer_relevancy": answer_relevancy,
+                    "context_precision": context_precision,
+                    "context_recall": context_recall,
+                    "faithfulness": faithfulness,
+                },
+            }
+
+        try:
+            # Try direct import first (works in most environments)
+            ragas_modules = import_ragas()
+            print("DEBUG: Direct ragas import successful")
         except Exception as e:
-            raise RuntimeError(
-                "Ragas not available. Install ragas>=0.2.0 and datasets."
-            ) from e
+            print(f"DEBUG: Direct import failed: {e}, trying thread isolation")
+            # If direct import fails due to uvloop, use thread isolation
+            ragas_modules = run_in_thread_with_new_loop(import_ragas)
+            print("DEBUG: Thread-isolated ragas import successful")
 
-        # Configure local providers (Ollama, HF BGE-M3) when available
-        llm = None
+        # Extract imported modules
+        Dataset = ragas_modules["Dataset"]
+        evaluate = ragas_modules["evaluate"]
+        answer_relevancy = ragas_modules["metrics"]["answer_relevancy"]
+        context_precision = ragas_modules["metrics"]["context_precision"]
+        context_recall = ragas_modules["metrics"]["context_recall"]
+        faithfulness = ragas_modules["metrics"]["faithfulness"]
+
+    except Exception as e:
+        print(f"DEBUG: All ragas import strategies failed: {e}")
+        import traceback
+
+        print(f"DEBUG: Final traceback: {traceback.format_exc()}")
+        raise RuntimeError(f"Ragas initialization failed: {e}") from e
+
+    # Configure本地 provider：优先使用本地 embedding + Ollama LLM，如失败按需降级
+    llm = None
+    emb = None
+    try:
+        from ragas.embeddings import HuggingFaceEmbeddings
+
+        model_name = os.getenv("ASKME_RAGAS_EMBED_MODEL", "BAAI/bge-m3")
+        emb = HuggingFaceEmbeddings(
+            model=model_name,
+            use_api=False,
+            device="cpu",
+            normalize_embeddings=True,
+            batch_size=32,
+        )
+        print(f"DEBUG: Ragas embeddings configured with model={model_name}")
+    except Exception as e:
+        print(f"DEBUG: Failed to configure Ragas embeddings: {e}")
         emb = None
-        try:
-            # Prefer HuggingFace embeddings for BGE-M3 (local, no network)
-            from ragas.embeddings import HuggingFaceEmbeddings
 
-            model_name = os.getenv("ASKME_RAGAS_EMBED_MODEL", "BAAI/bge-m3")
-            emb = HuggingFaceEmbeddings(model_name=model_name)
-        except Exception:
-            emb = None
-        try:
-            # Use OpenAI-compatible client pointed to Ollama for LLM metrics
-            from openai import OpenAI
-            from ragas.llms import OpenAI as RagasOpenAI
+    llm_settings = {
+        "model": os.getenv("ASKME_RAGAS_LLM_MODEL", "gpt-oss:20b"),
+        "base_url": os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
+        "api_key": os.getenv("OPENAI_API_KEY", "ollama-local"),
+    }
 
-            base_url = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
-            api_key = os.getenv("OPENAI_API_KEY", "ollama-local")
-            os.environ.setdefault("OPENAI_API_BASE", base_url)
-            os.environ.setdefault("OPENAI_API_KEY", api_key)
-            model = os.getenv("ASKME_RAGAS_LLM_MODEL", "gpt-oss:20b")
-            client = OpenAI(base_url=base_url, api_key=api_key)
-            llm = RagasOpenAI(client=client, model=model)
-        except Exception:
-            llm = None
+    try:
+        from askme.evals.ragas_llm import build_ollama_llm
 
-        # Default metrics
-        from typing import Any as AnyMetric
+        llm = build_ollama_llm(llm_settings)
+        print(
+            "DEBUG: Ragas LLM configured with model=%s, base_url=%s"
+            % (llm_settings["model"], llm_settings["base_url"])
+        )
+    except Exception as e:
+        print(f"DEBUG: Failed to configure Ragas LLM: {e}")
+        import traceback
 
-        metric_objs: List[AnyMetric] = []
-        selected_metrics = metrics or [
-            "faithfulness",
-            "answer_relevancy",
-            "context_precision",
-            "context_recall",
-        ]
-        for m in selected_metrics:
-            if m == "faithfulness":
-                metric_objs.append(faithfulness)
-            elif m in ("answer_relevancy", "answer_relevance"):
-                metric_objs.append(answer_relevancy)
-            elif m == "context_precision":
-                metric_objs.append(context_precision)
-            elif m == "context_recall":
-                metric_objs.append(context_recall)
+        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
+        llm = None
 
-        # Ragas expects a dataset with these columns
-        q = [s["question"] for s in samples]
-        a = [s.get("answer", "") for s in samples]
-        ctx = [s.get("contexts", []) for s in samples]
-        gt = [s.get("ground_truths", []) for s in samples]
-        # Ragas>=0.2 有些指标（如 context_precision）期望列名 `reference`
-        # 这里用首个 ground_truth 作为 reference（若存在）
-        ref = [(g[0] if isinstance(g, list) and g else "") for g in gt]
-        data = Dataset.from_dict(
+    # Default metrics
+    from typing import Any as AnyMetric
+
+    metric_objs: List[AnyMetric] = []
+    selected_metrics = metrics or [
+        "faithfulness",
+        "answer_relevancy",
+        "context_precision",
+        "context_recall",
+    ]
+    for m in selected_metrics:
+        if m == "faithfulness":
+            metric_objs.append(faithfulness)
+        elif m in ("answer_relevancy", "answer_relevance"):
+            metric_objs.append(answer_relevancy)
+        elif m == "context_precision":
+            metric_objs.append(context_precision)
+        elif m == "context_recall":
+            metric_objs.append(context_recall)
+
+    # Ragas expects a dataset with these columns
+    q = [s["question"] for s in samples]
+    a = [s.get("answer", "") for s in samples]
+    ctx = [s.get("contexts", []) for s in samples]
+    gt = [s.get("ground_truths", []) for s in samples]
+    # Ragas>=0.2 有些指标（如 context_precision）期望列名 `reference`
+    # 这里用首个 ground_truth 作为 reference（若存在）
+    ref = [(g[0] if isinstance(g, list) and g else "") for g in gt]
+
+    # Prefer passing explicit providers when available
+    def _evaluate_dataset(ds: Any) -> Any:
+        print(
+            "DEBUG: Running evaluation with LLM=%s, EMB=%s"
+            % (llm is not None, emb is not None)
+        )
+        if llm is not None and emb is not None:
+            print("DEBUG: Using custom LLM and embeddings")
+            return evaluate(ds, metrics=metric_objs, llm=llm, embeddings=emb)
+        if llm is not None:
+            print("DEBUG: Using custom LLM only")
+            return evaluate(ds, metrics=metric_objs, llm=llm)
+        if emb is not None:
+            print("DEBUG: Using custom embeddings only")
+            return evaluate(ds, metrics=metric_objs, embeddings=emb)
+        print("DEBUG: Using default providers")
+        return evaluate(ds, metrics=metric_objs)
+
+    per_metric_values: Dict[str, List[float]] = {m: [] for m in selected_metrics}
+
+    for idx in range(len(samples)):
+        single_ds = Dataset.from_dict(
             {
-                "question": q,
-                "answer": a,
-                "contexts": ctx,
-                "ground_truths": gt,
-                "reference": ref,
+                "question": [q[idx]],
+                "answer": [a[idx]],
+                "contexts": [ctx[idx]],
+                "ground_truths": [gt[idx]],
+                "reference": [ref[idx]],
             }
         )
 
-        # Prefer passing explicit providers when available
-        def _run_evaluation() -> Any:
-            if llm is not None or emb is not None:
-                return evaluate(data, metrics=metric_objs, llm=llm, embeddings=emb)
-            return evaluate(data, metrics=metric_objs)
-
         try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                result = pool.submit(_run_evaluation).result()
-        except Exception:
-            result = _run_evaluation()
-        scores: Dict[str, float] = {}
+            result = _evaluate_dataset(single_ds)
+        except Exception as e:
+            print(f"DEBUG: Ragas per-sample evaluation failed at index {idx}: {e}")
+            continue
+
         for metric_name in selected_metrics:
             aliases: List[str] = [metric_name]
             if metric_name == "answer_relevance":
@@ -272,13 +347,14 @@ def run_ragas(
 
             values = _collect_metric_values(result, aliases)
             if values:
-                scores[metric_name] = sum(values) / len(values)
-            else:
-                scores[metric_name] = 0.0
-        return scores
-    finally:
-        if restore_policy is not None:
-            try:
-                asyncio.set_event_loop_policy(restore_policy)
-            except Exception:
-                pass
+                per_metric_values[metric_name].extend(values)
+
+    scores: Dict[str, float] = {}
+    for metric_name in selected_metrics:
+        values = per_metric_values.get(metric_name, [])
+        if values:
+            scores[metric_name] = sum(values) / len(values)
+        else:
+            scores[metric_name] = 0.0
+
+    return scores
