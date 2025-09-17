@@ -14,7 +14,7 @@ from askme.retriever.weaviate_retriever import WeaviateRetriever
 class TestWeaviateRetrieverCore:
     """Test core Weaviate retriever functionality."""
 
-    def test_initialization_basic(self):
+    def test_initialization_basic(self) -> None:
         """Test basic initialization."""
         config = {
             "url": "https://test-cluster.weaviate.network",
@@ -32,7 +32,7 @@ class TestWeaviateRetrieverCore:
         assert retriever.client is None
         assert retriever.collection is None
 
-    def test_initialization_defaults(self):
+    def test_initialization_defaults(self) -> None:
         """Test initialization with default values."""
         config = {"collection_name": "minimal"}
 
@@ -45,7 +45,7 @@ class TestWeaviateRetrieverCore:
         assert retriever.collection_name == "minimal"
 
     @pytest.mark.asyncio
-    async def test_connect_with_api_key(self):
+    async def test_connect_with_api_key(self) -> None:
         """Test connection with API key (cloud)."""
         config = {
             "url": "https://cluster.weaviate.network",
@@ -69,7 +69,7 @@ class TestWeaviateRetrieverCore:
             )
 
     @pytest.mark.asyncio
-    async def test_connect_local_http(self):
+    async def test_connect_local_http(self) -> None:
         """Test connection to local Weaviate instance."""
         config = {
             "url": "http://localhost:8080",
@@ -97,7 +97,7 @@ class TestWeaviateRetrieverCore:
             )
 
     @pytest.mark.asyncio
-    async def test_connect_local_https(self):
+    async def test_connect_local_https(self) -> None:
         """Test connection to local HTTPS Weaviate."""
         config = {
             "url": "https://localhost:8443",
@@ -124,7 +124,7 @@ class TestWeaviateRetrieverCore:
             )
 
     @pytest.mark.asyncio
-    async def test_connect_failure(self):
+    async def test_connect_failure(self) -> None:
         """Test connection failure handling."""
         config = {"class_name": "FailDoc"}
         retriever = WeaviateRetriever(config)
@@ -138,7 +138,7 @@ class TestWeaviateRetrieverCore:
             assert retriever.client is None
 
     @pytest.mark.asyncio
-    async def test_disconnect(self):
+    async def test_disconnect(self) -> None:
         """Test disconnection."""
         config = {"class_name": "DisconnectTest"}
         retriever = WeaviateRetriever(config)
@@ -153,7 +153,7 @@ class TestWeaviateRetrieverCore:
         assert retriever.collection is None
 
     @pytest.mark.asyncio
-    async def test_disconnect_no_client(self):
+    async def test_disconnect_no_client(self) -> None:
         """Test disconnection when no client exists."""
         config = {"class_name": "NoClient"}
         retriever = WeaviateRetriever(config)
@@ -164,7 +164,7 @@ class TestWeaviateRetrieverCore:
         assert retriever.client is None
 
     @pytest.mark.asyncio
-    async def test_create_collection_new(self):
+    async def test_create_collection_new(self) -> None:
         """Test creating a new collection."""
         config = {"class_name": "NewCollection"}
         retriever = WeaviateRetriever(config)
@@ -195,7 +195,7 @@ class TestWeaviateRetrieverCore:
             assert retriever.collection == mock_get_collection
 
     @pytest.mark.asyncio
-    async def test_create_collection_existing(self):
+    async def test_create_collection_existing(self) -> None:
         """Test handling existing collection."""
         config = {"class_name": "ExistingCollection"}
         retriever = WeaviateRetriever(config)
@@ -216,7 +216,7 @@ class TestWeaviateRetrieverCore:
         assert retriever.collection == mock_existing_collection
 
     @pytest.mark.asyncio
-    async def test_insert_documents_basic(self):
+    async def test_insert_documents_basic(self) -> None:
         """Test basic document insertion."""
         config = {"class_name": "InsertTest"}
         retriever = WeaviateRetriever(config)
@@ -258,7 +258,7 @@ class TestWeaviateRetrieverCore:
             assert all(isinstance(id, str) for id in result_ids)
 
     @pytest.mark.asyncio
-    async def test_insert_documents_with_errors(self):
+    async def test_insert_documents_with_errors(self) -> None:
         """Test document insertion with partial errors."""
         config = {"class_name": "ErrorTest"}
         retriever = WeaviateRetriever(config)
@@ -292,7 +292,7 @@ class TestWeaviateRetrieverCore:
             )  # Both documents are processed, even if one fails
 
     @pytest.mark.asyncio
-    async def test_dense_search_basic(self):
+    async def test_dense_search_basic(self) -> None:
         """Test basic dense vector search."""
         config = {"class_name": "DenseSearch"}
         retriever = WeaviateRetriever(config)
@@ -333,7 +333,7 @@ class TestWeaviateRetrieverCore:
             assert results[0].document.content == "Dense search result"
 
     @pytest.mark.asyncio
-    async def test_dense_search_with_filters(self):
+    async def test_dense_search_with_filters(self) -> None:
         """Test dense search with metadata filters."""
         config = {"class_name": "FilteredDense"}
         retriever = WeaviateRetriever(config)
@@ -361,7 +361,7 @@ class TestWeaviateRetrieverCore:
             assert results == []
 
     @pytest.mark.asyncio
-    async def test_sparse_search_basic(self):
+    async def test_sparse_search_basic(self) -> None:
         """Test sparse (BM25) search."""
         config = {"class_name": "SparseSearch"}
         retriever = WeaviateRetriever(config)
@@ -397,7 +397,7 @@ class TestWeaviateRetrieverCore:
             assert results == []
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_basic(self):
+    async def test_hybrid_search_basic(self) -> None:
         """Test hybrid search combining dense and sparse."""
         config = {"class_name": "HybridSearch"}
         retriever = WeaviateRetriever(config)
@@ -437,7 +437,7 @@ class TestWeaviateRetrieverCore:
             assert results[0].retrieval_method == "hybrid"
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_with_filters(self):
+    async def test_hybrid_search_with_filters(self) -> None:
         """Test hybrid search with metadata filters."""
         config = {"class_name": "FilteredHybrid"}
         retriever = WeaviateRetriever(config)
@@ -464,7 +464,7 @@ class TestWeaviateRetrieverCore:
             assert len(results) == 0
 
     @pytest.mark.asyncio
-    async def test_get_document(self):
+    async def test_get_document(self) -> None:
         """Test getting a document by ID."""
         config = {"class_name": "GetDocTest"}
         retriever = WeaviateRetriever(config)
@@ -506,7 +506,7 @@ class TestWeaviateRetrieverCore:
             assert document.embedding is None  # get_document doesn't return embedding
 
     @pytest.mark.asyncio
-    async def test_get_document_not_found(self):
+    async def test_get_document_not_found(self) -> None:
         """Test getting non-existent document."""
         config = {"class_name": "NotFound"}
         retriever = WeaviateRetriever(config)
@@ -531,7 +531,7 @@ class TestWeaviateRetrieverCore:
             assert document is None
 
     @pytest.mark.asyncio
-    async def test_delete_document(self):
+    async def test_delete_document(self) -> None:
         """Test document deletion."""
         config = {"class_name": "DeleteTest"}
         retriever = WeaviateRetriever(config)
@@ -561,7 +561,7 @@ class TestWeaviateRetrieverCore:
             mock_objects.delete_by_id.assert_called_once_with("found_uuid")
 
     @pytest.mark.asyncio
-    async def test_delete_document_not_found(self):
+    async def test_delete_document_not_found(self) -> None:
         """Test deleting non-existent document."""
         config = {"class_name": "DeleteMissing"}
         retriever = WeaviateRetriever(config)
@@ -590,7 +590,7 @@ class TestWeaviateRetrieverCore:
             assert success is False
 
     @pytest.mark.asyncio
-    async def test_update_document(self):
+    async def test_update_document(self) -> None:
         """Test document update."""
         config = {"class_name": "UpdateTest"}
         retriever = WeaviateRetriever(config)
@@ -616,7 +616,7 @@ class TestWeaviateRetrieverCore:
                 mock_insert.assert_called_once_with([updated_doc])
 
     @pytest.mark.asyncio
-    async def test_get_collection_stats(self):
+    async def test_get_collection_stats(self) -> None:
         """Test getting collection statistics."""
         config = {"class_name": "StatsTest"}
         retriever = WeaviateRetriever(config)
@@ -647,7 +647,7 @@ class TestWeaviateRetrieverCore:
             assert stats["description"] == "Weaviate collection"
             assert len(stats["indexes"]) == 1
 
-    def test_build_where_filter_empty(self):
+    def test_build_where_filter_empty(self) -> None:
         """Test building WHERE filter with no filters."""
         config = {"class_name": "FilterTest"}
         retriever = WeaviateRetriever(config)
@@ -655,7 +655,7 @@ class TestWeaviateRetrieverCore:
         where_filter = retriever._build_where({})
         assert where_filter is None
 
-    def test_build_where_filter_single(self):
+    def test_build_where_filter_single(self) -> None:
         """Test building WHERE filter with single condition."""
         config = {"class_name": "FilterTest"}
         retriever = WeaviateRetriever(config)
@@ -673,7 +673,7 @@ class TestWeaviateRetrieverCore:
             mock_by_property.equal.assert_called_with("document.pdf")
             assert where_filter == mock_equal
 
-    def test_build_where_filter_multiple(self):
+    def test_build_where_filter_multiple(self) -> None:
         """Test building WHERE filter with multiple conditions."""
         config = {"class_name": "FilterTest"}
         retriever = WeaviateRetriever(config)
@@ -692,7 +692,7 @@ class TestWeaviateRetrieverCore:
             assert mock_filter.by_property.call_count >= 2
 
     @pytest.mark.asyncio
-    async def test_ensure_collection(self):
+    async def test_ensure_collection(self) -> None:
         """Test _ensure_collection method."""
         config = {"class_name": "EnsureTest"}
         retriever = WeaviateRetriever(config)
@@ -717,7 +717,7 @@ class TestWeaviateRetrieverEdgeCases:
     """Test edge cases and error conditions."""
 
     @pytest.mark.asyncio
-    async def test_operations_without_client(self):
+    async def test_operations_without_client(self) -> None:
         """Test operations when client is not connected."""
         config = {"class_name": "NoClient"}
         retriever = WeaviateRetriever(config)
@@ -735,7 +735,7 @@ class TestWeaviateRetrieverEdgeCases:
                 await retriever.get_document("test")
 
     @pytest.mark.asyncio
-    async def test_operations_without_collection(self):
+    async def test_operations_without_collection(self) -> None:
         """Test operations when collection doesn't exist."""
         config = {"class_name": "NoCollection"}
         retriever = WeaviateRetriever(config)
@@ -756,7 +756,7 @@ class TestWeaviateRetrieverEdgeCases:
                 pass  # Expected to fail due to mocking
 
     @pytest.mark.asyncio
-    async def test_search_empty_results(self):
+    async def test_search_empty_results(self) -> None:
         """Test search with no results."""
         config = {"class_name": "EmptyResults"}
         retriever = WeaviateRetriever(config)
@@ -776,7 +776,7 @@ class TestWeaviateRetrieverEdgeCases:
             results = await retriever.dense_search([0.1] * 1024)
             assert results == []
 
-    def test_url_parsing_edge_cases(self):
+    def test_url_parsing_edge_cases(self) -> None:
         """Test URL parsing for different formats."""
         # Test with port specified
         config1 = {"url": "http://localhost:8081", "class_name": "Test1"}
@@ -793,7 +793,7 @@ class TestWeaviateRetrieverEdgeCases:
         retriever3 = WeaviateRetriever(config3)
         assert retriever3.url == "http://weaviate"
 
-    def test_config_edge_cases(self):
+    def test_config_edge_cases(self) -> None:
         """Test configuration edge cases."""
         # Minimal config
         config = {}
@@ -811,7 +811,7 @@ class TestWeaviateRetrieverIntegration:
     """Integration-style tests."""
 
     @pytest.mark.asyncio
-    async def test_full_workflow_simulation(self):
+    async def test_full_workflow_simulation(self) -> None:
         """Test complete workflow with mocks."""
         config = {"class_name": "IntegrationTest", "dimension": 512}
         retriever = WeaviateRetriever(config)

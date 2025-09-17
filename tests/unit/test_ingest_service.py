@@ -58,7 +58,7 @@ def svc(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_initialize_calls_dependencies(svc):
+async def test_initialize_calls_dependencies(svc) -> None:
     await svc.initialize()
     svc.vector_retriever.connect.assert_awaited()
     svc.embedding_manager.embedding_service.initialize.assert_awaited()
@@ -66,7 +66,7 @@ async def test_initialize_calls_dependencies(svc):
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_happy_path(svc, tmp_path):
+async def test_ingest_file_happy_path(svc, tmp_path) -> None:
     # Prepare processor to return two documents
     docs = [
         Document(id="d1", content="hello"),
@@ -88,7 +88,7 @@ async def test_ingest_file_happy_path(svc, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ingest_directory_happy_path(svc, tmp_path):
+async def test_ingest_directory_happy_path(svc, tmp_path) -> None:
     # Emulate directory processing returning one Document
     docs = [Document(id="d3", content="alpha")]
     svc.processing_pipeline.process_directory = AsyncMock(return_value=docs)
@@ -103,7 +103,7 @@ async def test_ingest_directory_happy_path(svc, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test__ingest_documents_batches_and_overwrite(svc):
+async def test__ingest_documents_batches_and_overwrite(svc) -> None:
     docs = [
         Document(id=f"d{i}", content=f"text {i}") for i in range(5)
     ]  # 3 batches of size 2,2,1
@@ -126,7 +126,7 @@ async def test__ingest_documents_batches_and_overwrite(svc):
 
 
 @pytest.mark.asyncio
-async def test_cancel_task_and_cleanup(svc):
+async def test_cancel_task_and_cleanup(svc) -> None:
     # Create a pending task
     async def sleeper():
         await asyncio.sleep(0.1)
@@ -146,7 +146,7 @@ async def test_cancel_task_and_cleanup(svc):
 
 
 @pytest.mark.asyncio
-async def test_get_ingestion_stats_and_cleanup_completed(svc):
+async def test_get_ingestion_stats_and_cleanup_completed(svc) -> None:
     # Populate tasks representing completed and failed ones
     now = datetime.utcnow()
     svc._tasks = {

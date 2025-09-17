@@ -14,7 +14,7 @@ from askme.retriever.milvus_retriever import MilvusRetriever
 
 
 @pytest.mark.asyncio
-async def test_sparse_search_with_filters():
+async def test_sparse_search_with_filters() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
     # one hit
@@ -27,7 +27,7 @@ async def test_sparse_search_with_filters():
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_rrf_native_error_fallback():
+async def test_hybrid_search_rrf_native_error_fallback() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
     # Force native path but make hybrid_search raise so it falls back
@@ -60,7 +60,7 @@ async def test_hybrid_search_rrf_native_error_fallback():
 
 
 @pytest.mark.asyncio
-async def test_create_collection_when_exists_early_return():
+async def test_create_collection_when_exists_early_return() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     with patch("askme.retriever.milvus_retriever.utility") as u:
         with patch("askme.retriever.milvus_retriever.connections"):
@@ -70,7 +70,7 @@ async def test_create_collection_when_exists_early_return():
 
 
 @pytest.mark.asyncio
-async def test_disconnect_releases_collection():
+async def test_disconnect_releases_collection() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
     with patch("askme.retriever.milvus_retriever.connections") as c:
@@ -80,7 +80,7 @@ async def test_disconnect_releases_collection():
 
 
 @pytest.mark.asyncio
-async def test_get_collection_stats_includes_indexes():
+async def test_get_collection_stats_includes_indexes() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     col = MagicMock()
     col.num_entities = 10
@@ -96,7 +96,7 @@ async def test_get_collection_stats_includes_indexes():
 
 
 @pytest.mark.asyncio
-async def test_operations_without_collection_errors():
+async def test_operations_without_collection_errors() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     with pytest.raises(RuntimeError):
         await r.dense_search([0.1])
@@ -107,7 +107,7 @@ async def test_operations_without_collection_errors():
 
 
 @pytest.mark.asyncio
-async def test_connect_failure_logs_and_raises():
+async def test_connect_failure_logs_and_raises() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     with patch("askme.retriever.milvus_retriever.connections") as c:
         c.connect.side_effect = RuntimeError("bad")
@@ -116,7 +116,7 @@ async def test_connect_failure_logs_and_raises():
 
 
 @pytest.mark.asyncio
-async def test_dense_sparse_and_hybrid_exceptions_propagate():
+async def test_dense_sparse_and_hybrid_exceptions_propagate() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
     r.collection.search.side_effect = RuntimeError("search fail")

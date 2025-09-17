@@ -24,7 +24,7 @@ def _mk_res(doc_id: str, score: float, method: str, rank: int) -> RetrievalResul
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_rrf_forces_fallback_when_native_unavailable():
+async def test_hybrid_search_rrf_forces_fallback_when_native_unavailable() -> None:
     cfg = {"collection_name": "c"}
     r = MilvusRetriever(cfg)
     r.collection = MagicMock()  # pretend connected
@@ -45,7 +45,7 @@ async def test_hybrid_search_rrf_forces_fallback_when_native_unavailable():
 
 
 @pytest.mark.asyncio
-async def test_update_document_success_path():
+async def test_update_document_success_path() -> None:
     cfg = {"collection_name": "c"}
     r = MilvusRetriever(cfg)
 

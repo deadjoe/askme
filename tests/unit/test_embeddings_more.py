@@ -16,7 +16,7 @@ from askme.core.embeddings import BGEEmbeddingService
 
 
 @pytest.mark.asyncio
-async def test_encode_query_normalization_default():
+async def test_encode_query_normalization_default() -> None:
     cfg = EmbeddingConfig(normalize_embeddings=True)
     svc = BGEEmbeddingService(cfg)
 
@@ -33,7 +33,7 @@ async def test_encode_query_normalization_default():
     assert abs(norm - 1.0) < 1e-6
 
 
-def test_convert_sparse_embedding_variants():
+def test_convert_sparse_embedding_variants() -> None:
     cfg = EmbeddingConfig()
     svc = BGEEmbeddingService(cfg)
     # dict
@@ -51,7 +51,7 @@ def test_convert_sparse_embedding_variants():
 
 
 @pytest.mark.asyncio
-async def test_compute_similarity_dense_sparse_hybrid_and_errors():
+async def test_compute_similarity_dense_sparse_hybrid_and_errors() -> None:
     cfg = EmbeddingConfig()
     svc = BGEEmbeddingService(cfg)
     q = {"dense_embedding": [1.0, 0.0], "sparse_embedding": {0: 1.0, 2: 0.5}}
@@ -77,7 +77,7 @@ async def test_compute_similarity_dense_sparse_hybrid_and_errors():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_resets_state(monkeypatch):
+async def test_cleanup_resets_state(monkeypatch) -> None:
     cfg = EmbeddingConfig()
     svc = BGEEmbeddingService(cfg)
 

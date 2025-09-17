@@ -37,7 +37,7 @@ def _build_patched_app():
         return app
 
 
-def test_create_app_routes():
+def test_create_app_routes() -> None:
     app = _build_patched_app()
     # Verify router prefixes registered
     paths = {route.path for route in app.routes}
@@ -47,7 +47,7 @@ def test_create_app_routes():
     assert any("/eval" in p for p in paths)
 
 
-def test_lifespan_startup_skips_heavy_init(monkeypatch):
+def test_lifespan_startup_skips_heavy_init(monkeypatch) -> None:
     monkeypatch.setenv("ASKME_SKIP_HEAVY_INIT", "1")
     monkeypatch.setenv("ASKME_ENABLE_OLLAMA", "0")
     app = _build_patched_app()
@@ -67,7 +67,7 @@ def test_lifespan_startup_skips_heavy_init(monkeypatch):
         assert client.get("/ping").status_code == 200
 
 
-def test_global_exception_handler(monkeypatch):
+def test_global_exception_handler(monkeypatch) -> None:
     app = _build_patched_app()
 
     @app.get("/boom")
