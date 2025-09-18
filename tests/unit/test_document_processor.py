@@ -25,7 +25,7 @@ from askme.retriever.base import Document
 class TestChunkingConfig:
     """Test chunking configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default chunking configuration values."""
         config = ChunkingConfig()
         assert config.method == "semantic"
@@ -35,7 +35,7 @@ class TestChunkingConfig:
         assert config.max_chunk_size == 2000
         assert config.preserve_structure is True
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom chunking configuration."""
         config = ChunkingConfig(
             method="fixed",
@@ -56,7 +56,7 @@ class TestChunkingConfig:
 class TestDocumentChunker:
     """Test document chunking functionality."""
 
-    def test_fixed_size_chunking_normal(self) -> None:
+    def test_fixed_size_chunking_normal(self: Any) -> None:
         """Test normal fixed-size chunking."""
         config = ChunkingConfig(
             method="fixed", chunk_size=100, chunk_overlap=20, min_chunk_size=10
@@ -81,7 +81,7 @@ class TestDocumentChunker:
                     break
             assert overlap_found or config.chunk_overlap == 0
 
-    def test_fixed_size_chunking_large_overlap(self) -> None:
+    def test_fixed_size_chunking_large_overlap(self: Any) -> None:
         """Test fixed-size chunking with overlap >= chunk_size (regression test)."""
         config = ChunkingConfig(
             method="fixed", chunk_size=100, chunk_overlap=150, min_chunk_size=10
@@ -95,7 +95,7 @@ class TestDocumentChunker:
         assert len(chunks) >= 5
         assert len(chunks) <= 15  # Should terminate reasonably
 
-    def test_semantic_chunking_paragraphs(self) -> None:
+    def test_semantic_chunking_paragraphs(self: Any) -> None:
         """Test semantic chunking based on paragraphs."""
         config = ChunkingConfig(
             method="semantic", chunk_size=50, chunk_overlap=10, min_chunk_size=20
@@ -114,7 +114,7 @@ class TestDocumentChunker:
         # Paragraphs should be preserved in chunks
         assert any("First paragraph" in chunk for chunk in chunks)
 
-    def test_recursive_chunking(self) -> None:
+    def test_recursive_chunking(self: Any) -> None:
         """Test recursive chunking with multiple separators."""
         config = ChunkingConfig(
             method="recursive", chunk_size=100, chunk_overlap=20, min_chunk_size=10
@@ -130,7 +130,7 @@ class TestDocumentChunker:
         assert len(chunks) >= 1
         assert all(len(chunk) >= config.min_chunk_size for chunk in chunks)
 
-    def test_chunk_document_metadata(self) -> None:
+    def test_chunk_document_metadata(self: Any) -> None:
         """Test chunk document with proper metadata."""
         config = ChunkingConfig(method="fixed", chunk_size=50, min_chunk_size=10)
         chunker = DocumentChunker(config)
@@ -163,7 +163,7 @@ class TestDocumentChunker:
 class TestPDFProcessor:
     """Test PDF document processor."""
 
-    def test_can_process_pdf(self) -> None:
+    def test_can_process_pdf(self: Any) -> None:
         """Test PDF file recognition."""
         processor = PDFProcessor()
         assert processor.can_process(Path("test.pdf")) is True
@@ -171,7 +171,7 @@ class TestPDFProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_pdf_mock(self) -> None:
+    async def test_process_pdf_mock(self: Any) -> None:
         """Test PDF processing with mocked pypdf."""
         processor = PDFProcessor()
 
@@ -204,7 +204,7 @@ class TestPDFProcessor:
 class TestMarkdownProcessor:
     """Test Markdown document processor."""
 
-    def test_can_process_markdown(self) -> None:
+    def test_can_process_markdown(self: Any) -> None:
         """Test Markdown file recognition."""
         processor = MarkdownProcessor()
         assert processor.can_process(Path("test.md")) is True
@@ -214,7 +214,7 @@ class TestMarkdownProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_markdown_with_title(self) -> None:
+    async def test_process_markdown_with_title(self: Any) -> None:
         """Test Markdown processing with title extraction."""
         processor = MarkdownProcessor()
 
@@ -244,7 +244,7 @@ class TestMarkdownProcessor:
                 assert result.metadata["encoding"] == "utf-8"
 
     @pytest.mark.asyncio
-    async def test_process_markdown_without_title(self) -> None:
+    async def test_process_markdown_without_title(self: Any) -> None:
         """Test Markdown processing without H1 title."""
         processor = MarkdownProcessor()
 
@@ -274,7 +274,7 @@ class TestMarkdownProcessor:
 class TestHTMLProcessor:
     """Test HTML document processor."""
 
-    def test_can_process_html(self) -> None:
+    def test_can_process_html(self: Any) -> None:
         """Test HTML file recognition."""
         processor = HTMLProcessor()
         assert processor.can_process(Path("test.html")) is True
@@ -282,7 +282,7 @@ class TestHTMLProcessor:
         assert processor.can_process(Path("test.txt")) is False
 
     @pytest.mark.asyncio
-    async def test_process_html_with_title(self) -> None:
+    async def test_process_html_with_title(self: Any) -> None:
         """Test HTML processing with title extraction."""
         processor = HTMLProcessor()
 
@@ -325,7 +325,7 @@ class TestHTMLProcessor:
 class TestTextProcessor:
     """Test plain text document processor."""
 
-    def test_can_process_text(self) -> None:
+    def test_can_process_text(self: Any) -> None:
         """Test text file recognition."""
         processor = TextProcessor()
         assert processor.can_process(Path("test.txt")) is True
@@ -340,7 +340,7 @@ class TestTextProcessor:
             assert processor.can_process(Path("test.log")) is False
 
     @pytest.mark.asyncio
-    async def test_process_text_utf8(self) -> None:
+    async def test_process_text_utf8(self: Any) -> None:
         """Test text processing with UTF-8 encoding."""
         processor = TextProcessor()
 
@@ -367,7 +367,7 @@ class TestTextProcessor:
                 assert result.metadata["encoding"] == "utf-8"
 
     @pytest.mark.asyncio
-    async def test_process_text_encoding_fallback(self) -> None:
+    async def test_process_text_encoding_fallback(self: Any) -> None:
         """Test text processing with encoding fallback."""
         processor = TextProcessor()
 
@@ -403,7 +403,7 @@ class TestTextProcessor:
 class TestDocumentProcessingPipeline:
     """Test main document processing pipeline."""
 
-    def test_get_processor_selection(self) -> None:
+    def test_get_processor_selection(self: Any) -> None:
         """Test processor selection based on file extension."""
         pipeline = DocumentProcessingPipeline()
 
@@ -414,7 +414,7 @@ class TestDocumentProcessingPipeline:
         assert pipeline.get_processor(Path("test.unknown")) is None
 
     @pytest.mark.asyncio
-    async def test_process_file_with_metadata(self) -> None:
+    async def test_process_file_with_metadata(self: Any) -> None:
         """Test file processing with custom metadata and tags."""
         pipeline = DocumentProcessingPipeline()
 
@@ -452,7 +452,7 @@ class TestDocumentProcessingPipeline:
                     assert first_doc.metadata["source_type"] == "text"
 
     @pytest.mark.asyncio
-    async def test_process_file_not_found(self) -> None:
+    async def test_process_file_not_found(self: Any) -> None:
         """Test processing non-existent file."""
         pipeline = DocumentProcessingPipeline()
 
@@ -461,7 +461,7 @@ class TestDocumentProcessingPipeline:
                 await pipeline.process_file("nonexistent.txt")
 
     @pytest.mark.asyncio
-    async def test_process_file_unsupported_type(self) -> None:
+    async def test_process_file_unsupported_type(self: Any) -> None:
         """Test processing unsupported file type."""
         pipeline = DocumentProcessingPipeline()
 
@@ -470,7 +470,7 @@ class TestDocumentProcessingPipeline:
                 await pipeline.process_file("test.unknown")
 
     @pytest.mark.asyncio
-    async def test_process_directory_recursive(self) -> None:
+    async def test_process_directory_recursive(self: Any) -> None:
         """Test directory processing with recursive search."""
         pipeline = DocumentProcessingPipeline()
 
@@ -526,7 +526,7 @@ class TestDocumentProcessingPipeline:
                                     assert doc.metadata["tags"] == ["batch"]
 
     @pytest.mark.asyncio
-    async def test_process_directory_invalid_path(self) -> None:
+    async def test_process_directory_invalid_path(self: Any) -> None:
         """Test processing invalid directory path."""
         pipeline = DocumentProcessingPipeline()
 

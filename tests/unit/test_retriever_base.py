@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for base retriever functionality.
 """
@@ -15,7 +17,7 @@ from askme.retriever.base import (
 class TestDocument:
     """Test Document class."""
 
-    def test_document_creation(self) -> None:
+    def test_document_creation(self: Any) -> None:
         """Test creating a document."""
         doc = Document(
             id="test_001",
@@ -28,7 +30,7 @@ class TestDocument:
         assert doc.embedding is None
         assert doc.sparse_embedding is None
 
-    def test_document_with_embeddings(self) -> None:
+    def test_document_with_embeddings(self: Any) -> None:
         """Test document with embeddings."""
         doc = Document(
             id="test_002",
@@ -43,7 +45,7 @@ class TestDocument:
 class TestRetrievalResult:
     """Test RetrievalResult class."""
 
-    def test_retrieval_result_creation(self) -> None:
+    def test_retrieval_result_creation(self: Any) -> None:
         """Test creating a retrieval result."""
         doc = Document(id="test", content="content", metadata={})
         result = RetrievalResult(
@@ -58,7 +60,7 @@ class TestRetrievalResult:
         assert result.retrieval_method == "dense"
         assert result.debug_info is None
 
-    def test_retrieval_result_with_debug_info(self) -> None:
+    def test_retrieval_result_with_debug_info(self: Any) -> None:
         """Test retrieval result with debug info."""
         doc = Document(id="test", content="content", metadata={})
         result = RetrievalResult(
@@ -75,7 +77,7 @@ class TestRetrievalResult:
 class TestHybridSearchParams:
     """Test HybridSearchParams class."""
 
-    def test_default_params(self) -> None:
+    def test_default_params(self: Any) -> None:
         """Test default hybrid search parameters."""
         params = HybridSearchParams()
         assert params.topk == 50
@@ -84,7 +86,7 @@ class TestHybridSearchParams:
         assert params.rrf_k == 60
         assert params.filters is None
 
-    def test_custom_params(self) -> None:
+    def test_custom_params(self: Any) -> None:
         """Test custom hybrid search parameters."""
         filters = {"category": "tech"}
         params = HybridSearchParams(topk=100, alpha=0.7, use_rrf=False, filters=filters)
@@ -97,7 +99,7 @@ class TestHybridSearchParams:
 class TestSearchFusion:
     """Test SearchFusion utility methods."""
 
-    def create_sample_results(self):
+    def create_sample_results(self: Any) -> Any:
         """Create sample retrieval results for testing."""
         docs = [
             Document(id=f"doc_{i}", content=f"Content {i}", metadata={})
@@ -118,7 +120,7 @@ class TestSearchFusion:
 
         return dense_results, sparse_results
 
-    def test_alpha_fusion(self) -> None:
+    def test_alpha_fusion(self: Any) -> None:
         """Test alpha-weighted fusion."""
         dense_results, sparse_results = self.create_sample_results()
 
@@ -128,7 +130,7 @@ class TestSearchFusion:
         # Results should be ordered by combined score
         assert fused[0].document.id == "doc_1"  # Best combined score
 
-    def test_reciprocal_rank_fusion(self) -> None:
+    def test_reciprocal_rank_fusion(self: Any) -> None:
         """Test reciprocal rank fusion."""
         dense_results, sparse_results = self.create_sample_results()
 
@@ -140,7 +142,7 @@ class TestSearchFusion:
         # Check that RRF scores are calculated
         assert all(hasattr(result, "score") for result in fused)
 
-    def test_empty_results_fusion(self) -> None:
+    def test_empty_results_fusion(self: Any) -> None:
         """Test fusion with empty results."""
         empty_results = []
         dense_results, _ = self.create_sample_results()

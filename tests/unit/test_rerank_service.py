@@ -20,7 +20,7 @@ from askme.retriever.base import Document, RetrievalResult
 class TestRerankConfig:
     """Test reranking configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default reranking configuration values."""
         config = RerankConfig()
         assert config.local_enabled is True
@@ -31,7 +31,7 @@ class TestRerankConfig:
         assert config.local_batch_size == 16
         assert config.local_max_length == 1024
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom reranking configuration."""
         config = RerankConfig(
             local_enabled=False,
@@ -53,7 +53,7 @@ class TestBGEReranker:
     """Test BGE local reranker."""
 
     @pytest.fixture
-    def sample_documents(self) -> List[RetrievalResult]:
+    def sample_documents(self: Any) -> List[RetrievalResult]:
         """Create sample retrieval results for testing."""
         docs = [
             Document(
@@ -81,7 +81,7 @@ class TestBGEReranker:
             ),
         ]
 
-    def test_initialization(self) -> None:
+    def test_initialization(self: Any) -> None:
         """Test BGE reranker initialization."""
         config = RerankConfig()
         reranker = BGEReranker(config)
@@ -92,7 +92,7 @@ class TestBGEReranker:
         assert reranker.device in ["cpu", "cuda"]
 
     @pytest.mark.asyncio
-    async def test_initialize_success(self) -> None:
+    async def test_initialize_success(self: Any) -> None:
         """Test successful BGE reranker model initialization."""
         config = RerankConfig(local_model="BAAI/bge-reranker-base")
         reranker = BGEReranker(config)
@@ -116,7 +116,7 @@ class TestBGEReranker:
             )
 
     @pytest.mark.asyncio
-    async def test_initialize_trust_remote_code_fallback(self) -> None:
+    async def test_initialize_trust_remote_code_fallback(self: Any) -> None:
         """Test BGE reranker fallback when trust_remote_code is required."""
         config = RerankConfig(local_model="untrusted-model")
         reranker = BGEReranker(config)
@@ -142,7 +142,7 @@ class TestBGEReranker:
             assert reranker.model == mock_model
 
     @pytest.mark.asyncio
-    async def test_initialize_failure(self) -> None:
+    async def test_initialize_failure(self: Any) -> None:
         """Test BGE reranker initialization failure."""
         config = RerankConfig()
         reranker = BGEReranker(config)
@@ -164,7 +164,7 @@ class TestBGEReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_success(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test successful BGE reranking."""
         config = RerankConfig(local_batch_size=2, score_threshold=0.0)
@@ -211,7 +211,7 @@ class TestBGEReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_with_score_threshold(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test BGE reranking with score threshold filtering."""
         config = RerankConfig(score_threshold=0.8)
@@ -232,7 +232,7 @@ class TestBGEReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_with_long_content(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test BGE reranking with content truncation."""
         config = RerankConfig(local_max_length=128)
@@ -260,7 +260,7 @@ class TestBGEReranker:
         assert len(call_args[0][1]) <= config.local_max_length * 4  # Character limit
 
     @pytest.mark.asyncio
-    async def test_rerank_empty_documents(self) -> None:
+    async def test_rerank_empty_documents(self: Any) -> None:
         """Test BGE reranking with empty document list."""
         config = RerankConfig()
         reranker = BGEReranker(config)
@@ -270,7 +270,7 @@ class TestBGEReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_not_initialized(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test BGE reranking auto-initializes if needed."""
         config = RerankConfig()
@@ -289,7 +289,7 @@ class TestBGEReranker:
             assert reranker._is_initialized is True
             assert len(results) == 3
 
-    def test_get_model_info(self) -> None:
+    def test_get_model_info(self: Any) -> None:
         """Test getting BGE reranker model information."""
         config = RerankConfig(
             local_model="test-model",
@@ -310,7 +310,7 @@ class TestBGEReranker:
         assert info["initialized"] is False
 
     @pytest.mark.asyncio
-    async def test_cleanup(self) -> None:
+    async def test_cleanup(self: Any) -> None:
         """Test BGE reranker resource cleanup."""
         config = RerankConfig()
         reranker = BGEReranker(config)
@@ -336,7 +336,7 @@ class TestCohereReranker:
     """Test Cohere reranker."""
 
     @pytest.fixture
-    def sample_documents(self) -> List[RetrievalResult]:
+    def sample_documents(self: Any) -> List[RetrievalResult]:
         """Create sample retrieval results for testing."""
         docs = [
             Document(
@@ -356,7 +356,7 @@ class TestCohereReranker:
             ),
         ]
 
-    def test_initialization_with_api_key(self) -> None:
+    def test_initialization_with_api_key(self: Any) -> None:
         """Test Cohere reranker initialization with API key."""
         config = RerankConfig()
         mock_client = MagicMock()
@@ -369,7 +369,7 @@ class TestCohereReranker:
             assert reranker.client == mock_client
             mock_cohere.assert_called_once_with("test-api-key")
 
-    def test_initialization_without_api_key(self) -> None:
+    def test_initialization_without_api_key(self: Any) -> None:
         """Test Cohere reranker initialization without API key."""
         config = RerankConfig()
         reranker = CohereReranker(config, api_key=None)
@@ -380,7 +380,7 @@ class TestCohereReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_success(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test successful Cohere reranking."""
         config = RerankConfig(
@@ -438,7 +438,7 @@ class TestCohereReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_no_client(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test Cohere reranking without initialized client."""
         config = RerankConfig()
@@ -448,7 +448,7 @@ class TestCohereReranker:
             await reranker.rerank("query", sample_documents)
 
     @pytest.mark.asyncio
-    async def test_rerank_empty_documents(self) -> None:
+    async def test_rerank_empty_documents(self: Any) -> None:
         """Test Cohere reranking with empty document list."""
         config = RerankConfig()
         reranker = CohereReranker(config, api_key="test-key")
@@ -459,7 +459,7 @@ class TestCohereReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_with_long_content(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test Cohere reranking with content truncation."""
         config = RerankConfig()
@@ -492,7 +492,7 @@ class TestCohereReranker:
         call_args = mock_client.rerank.call_args[1]["documents"]
         assert len(call_args[0]) <= 4003  # 4000 chars + "..."
 
-    def test_get_model_info(self) -> None:
+    def test_get_model_info(self: Any) -> None:
         """Test getting Cohere reranker model information."""
         config = RerankConfig(
             cohere_model="rerank-english-v3.0",
@@ -515,7 +515,7 @@ class TestRerankingService:
     """Test main reranking service."""
 
     @pytest.fixture
-    def sample_documents(self) -> List[RetrievalResult]:
+    def sample_documents(self: Any) -> List[RetrievalResult]:
         """Create sample retrieval results for testing."""
         docs = [
             Document(id="doc1", content="First document content."),
@@ -531,7 +531,7 @@ class TestRerankingService:
             ),
         ]
 
-    def test_initialization_bge_only(self) -> None:
+    def test_initialization_bge_only(self: Any) -> None:
         """Test service initialization with BGE reranker only."""
         config = RerankConfig(local_enabled=True, cohere_enabled=False)
         service = RerankingService(config, cohere_api_key=None)
@@ -540,7 +540,7 @@ class TestRerankingService:
         assert service.cohere_reranker is None
         assert service._fallback_enabled is False
 
-    def test_initialization_cohere_only(self) -> None:
+    def test_initialization_cohere_only(self: Any) -> None:
         """Test service initialization with Cohere reranker only."""
         config = RerankConfig(local_enabled=False, cohere_enabled=True)
         service = RerankingService(config, cohere_api_key="test-key")
@@ -549,7 +549,7 @@ class TestRerankingService:
         assert service.cohere_reranker is not None
         assert service._fallback_enabled is True
 
-    def test_initialization_both_enabled(self) -> None:
+    def test_initialization_both_enabled(self: Any) -> None:
         """Test service initialization with both rerankers enabled."""
         config = RerankConfig(local_enabled=True, cohere_enabled=True)
         service = RerankingService(config, cohere_api_key="test-key")
@@ -559,7 +559,7 @@ class TestRerankingService:
         assert service._fallback_enabled is True
 
     @pytest.mark.asyncio
-    async def test_initialize_service(self) -> None:
+    async def test_initialize_service(self: Any) -> None:
         """Test service initialization."""
         config = RerankConfig(local_enabled=True, cohere_enabled=True)
         service = RerankingService(config, cohere_api_key="test-key")
@@ -574,7 +574,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_prefer_local_success(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking preferring local reranker (success case)."""
         config = RerankConfig(local_enabled=True, cohere_enabled=True, top_n=5)
@@ -606,7 +606,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_prefer_local_fallback(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking with local failure and Cohere fallback."""
         config = RerankConfig(local_enabled=True, cohere_enabled=True, top_n=5)
@@ -641,7 +641,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_no_rerankers_available(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking with no rerankers available."""
         config = RerankConfig(local_enabled=False, cohere_enabled=False)
@@ -652,7 +652,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_by_method_bge(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking by specific method (BGE)."""
         config = RerankConfig(local_enabled=True, top_n=3)
@@ -673,7 +673,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_by_method_cohere(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking by specific method (Cohere)."""
         config = RerankConfig(cohere_enabled=True, top_n=4)
@@ -694,7 +694,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_by_method_unavailable(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking by unavailable method."""
         config = RerankConfig(local_enabled=False)
@@ -707,7 +707,7 @@ class TestRerankingService:
 
     @pytest.mark.asyncio
     async def test_rerank_by_method_unknown(
-        self, sample_documents: List[RetrievalResult]
+        self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
         """Test reranking by unknown method."""
         config = RerankConfig()
@@ -716,7 +716,7 @@ class TestRerankingService:
         with pytest.raises(ValueError, match="Unknown reranking method"):
             await service.rerank_by_method("query", sample_documents, method="unknown")
 
-    def test_get_available_methods(self) -> None:
+    def test_get_available_methods(self: Any) -> None:
         """Test getting available reranking methods."""
         # BGE only
         config1 = RerankConfig(local_enabled=True, cohere_enabled=False)
@@ -733,7 +733,7 @@ class TestRerankingService:
         service3 = RerankingService(config3, cohere_api_key="test-key")
         assert set(service3.get_available_methods()) == {"bge_local", "cohere"}
 
-    def test_get_service_info(self) -> None:
+    def test_get_service_info(self: Any) -> None:
         """Test getting service information."""
         config = RerankConfig(
             local_enabled=True,
@@ -759,7 +759,7 @@ class TestRerankingService:
         assert info["cohere_reranker"] == {"type": "cohere"}
 
     @pytest.mark.asyncio
-    async def test_cleanup(self) -> None:
+    async def test_cleanup(self: Any) -> None:
         """Test service cleanup."""
         config = RerankConfig(local_enabled=True)
         service = RerankingService(config)
@@ -772,7 +772,7 @@ class TestRerankingService:
         service.bge_reranker.cleanup.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_rerank_empty_documents(self) -> None:
+    async def test_rerank_empty_documents(self: Any) -> None:
         """Test reranking with empty document list."""
         config = RerankConfig(local_enabled=True)
         service = RerankingService(config)

@@ -21,7 +21,7 @@ from askme.retriever.base import Document, RetrievalResult
 
 
 class _Req:
-    def __init__(self) -> None:
+    def __init__(self: Any) -> None:
         self.app = SimpleNamespace(state=SimpleNamespace())
 
 
@@ -47,21 +47,21 @@ async def test_query_documents_real_path_debug_alpha() -> None:
     req = _Req()
 
     class _Emb:
-        async def encode_query(self, q: str) -> Dict[str, Any]:
+        async def encode_query(self: Any, q: str) -> Dict[str, Any]:
             return {"dense_embedding": [0.2, 0.3], "sparse_embedding": {}}
 
     class _Ret:
-        async def hybrid_search(self, *_args, **_kwargs):
+        async def hybrid_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return _mk_results(["h1", "h2"])  # main results
 
-        async def dense_search(self, *_args, **_kwargs):
+        async def dense_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return _mk_results(["d1", "d2"])  # for debug stats
 
-        async def sparse_search(self, *_args, **_kwargs):
+        async def sparse_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return []  # trigger alpha-extreme fallback path
 
     class _RR:
-        async def rerank(self, *_args, **_kwargs):
+        async def rerank(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             doc1 = Document(id="h1", content="content h1", metadata={"title": "h1"})
             doc2 = Document(id="h2", content="content h2", metadata={"title": "h2"})
             return [
@@ -70,7 +70,7 @@ async def test_query_documents_real_path_debug_alpha() -> None:
             ]
 
     class _Gen:
-        async def generate(self, *_args, **_kwargs):
+        async def generate(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return "generated answer"
 
     req.app.state.embedding_service = _Emb()
@@ -95,17 +95,17 @@ async def test_retrieve_documents_real_path_rrf_enabled_hybrid_fallbacks() -> No
     req = _Req()
 
     class _Emb:
-        async def encode_query(self, q: str) -> Dict[str, Any]:
+        async def encode_query(self: Any, q: str) -> Dict[str, Any]:
             return {"dense_embedding": [0.5, 0.6], "sparse_embedding": {}}
 
     class _Ret:
-        async def hybrid_search(self, *_args, **_kwargs):
+        async def hybrid_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return _mk_results(["x1", "x2", "x3"])  # used for main + alpha extremes
 
-        async def dense_search(self, *_args, **_kwargs):
+        async def dense_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return _mk_results(["x1"])  # some overlap
 
-        async def sparse_search(self, *_args, **_kwargs):
+        async def sparse_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return []  # force fallback to alpha extremes
 
     req.app.state.embedding_service = _Emb()

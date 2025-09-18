@@ -13,23 +13,23 @@ from askme.retriever.weaviate_retriever import WeaviateRetriever
 
 
 class _AsyncBatch:
-    def __init__(self) -> None:
+    def __init__(self: Any) -> None:
         self.add_calls = 0
 
-    async def __aenter__(self):
+    async def __aenter__(self: Any) -> Any:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self: Any, exc_type: Any, exc: Any, tb: Any) -> Any:
         return False
 
-    async def add_object(self, **kwargs: Any):
+    async def add_object(self: Any, **kwargs: Any) -> Any:
         self.add_calls += 1
         # simulate awaitable return
         return None
 
 
 class _AsyncBatcher:
-    def dynamic(self):  # returns async context manager
+    def dynamic(self: Any) -> Any:  # returns async context manager
         return _AsyncBatch()
 
 
@@ -39,7 +39,7 @@ async def test_insert_documents_async_batch_path() -> None:
 
     # minimal fake collection that exposes .batch.dynamic()
     class _Col:
-        def __init__(self) -> None:
+        def __init__(self: Any) -> None:
             self.batch = _AsyncBatcher()
 
     col = _Col()

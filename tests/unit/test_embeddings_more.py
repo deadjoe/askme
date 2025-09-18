@@ -22,7 +22,7 @@ async def test_encode_query_normalization_default() -> None:
 
     # Patch model and mark initialized
     class _M:
-        def encode(self, *args: Any, **kwargs: Any):
+        def encode(self: Any, *args: Any, **kwargs: Any) -> Any:
             return {"dense_vecs": [np.array([3.0, 4.0])], "sparse_vecs": [{}]}
 
     svc.model = _M()
@@ -77,7 +77,7 @@ async def test_compute_similarity_dense_sparse_hybrid_and_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cleanup_resets_state(monkeypatch) -> None:
+async def test_cleanup_resets_state(monkeypatch: Any) -> None:
     cfg = EmbeddingConfig()
     svc = BGEEmbeddingService(cfg)
 

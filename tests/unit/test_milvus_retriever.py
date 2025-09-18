@@ -14,7 +14,7 @@ from askme.retriever.milvus_retriever import MilvusRetriever
 class TestMilvusRetrieverCore:
     """Test core Milvus retriever functionality."""
 
-    def test_initialization_basic(self) -> None:
+    def test_initialization_basic(self: Any) -> None:
         """Test basic initialization."""
         config = {
             "collection_name": "test_collection",
@@ -36,7 +36,7 @@ class TestMilvusRetrieverCore:
         assert retriever.secure is True
         assert retriever.dimension == 512
 
-    def test_initialization_defaults(self) -> None:
+    def test_initialization_defaults(self: Any) -> None:
         """Test initialization with default values."""
         config = {"collection_name": "defaults_test"}
 
@@ -51,7 +51,7 @@ class TestMilvusRetrieverCore:
         assert retriever.dimension == 1024
         assert retriever.collection is None
 
-    def test_connection_name_generation(self) -> None:
+    def test_connection_name_generation(self: Any) -> None:
         """Test connection name generation."""
         config1 = {"collection_name": "test1", "host": "host1", "port": 19530}
         config2 = {"collection_name": "test2", "host": "host2", "port": 19531}
@@ -65,7 +65,7 @@ class TestMilvusRetrieverCore:
         assert "askme_conn_" in retriever2.connection_name
 
     @pytest.mark.asyncio
-    async def test_connect_success(self) -> None:
+    async def test_connect_success(self: Any) -> None:
         """Test successful connection."""
         config = {"collection_name": "connect_test"}
         retriever = MilvusRetriever(config)
@@ -96,7 +96,7 @@ class TestMilvusRetrieverCore:
                     mock_collection.load.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_connect_no_existing_collection(self) -> None:
+    async def test_connect_no_existing_collection(self: Any) -> None:
         """Test connection when collection doesn't exist."""
         config = {"collection_name": "nonexistent"}
         retriever = MilvusRetriever(config)
@@ -111,7 +111,7 @@ class TestMilvusRetrieverCore:
                 assert retriever.collection is None
 
     @pytest.mark.asyncio
-    async def test_disconnect(self) -> None:
+    async def test_disconnect(self: Any) -> None:
         """Test disconnection."""
         config = {"collection_name": "disconnect_test"}
         retriever = MilvusRetriever(config)
@@ -124,7 +124,7 @@ class TestMilvusRetrieverCore:
             )
 
     @pytest.mark.asyncio
-    async def test_create_collection_basic(self) -> None:
+    async def test_create_collection_basic(self: Any) -> None:
         """Test basic collection creation."""
         config = {"collection_name": "create_test"}
         retriever = MilvusRetriever(config)
@@ -152,7 +152,7 @@ class TestMilvusRetrieverCore:
                             mock_collection.load.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_insert_documents_basic(self) -> None:
+    async def test_insert_documents_basic(self: Any) -> None:
         """Test basic document insertion."""
         config = {"collection_name": "insert_test"}
         retriever = MilvusRetriever(config)
@@ -190,7 +190,7 @@ class TestMilvusRetrieverCore:
         mock_collection.flush.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_insert_documents_no_collection(self) -> None:
+    async def test_insert_documents_no_collection(self: Any) -> None:
         """Test insertion failure without collection."""
         config = {"collection_name": "no_collection"}
         retriever = MilvusRetriever(config)
@@ -209,7 +209,7 @@ class TestMilvusRetrieverCore:
             await retriever.insert_documents(docs)
 
     @pytest.mark.asyncio
-    async def test_dense_search_basic(self) -> None:
+    async def test_dense_search_basic(self: Any) -> None:
         """Test basic dense search."""
         config = {"collection_name": "dense_search_test"}
         retriever = MilvusRetriever(config)
@@ -243,7 +243,7 @@ class TestMilvusRetrieverCore:
                 assert results[0].document.content == "Search result content"
 
     @pytest.mark.asyncio
-    async def test_dense_search_with_filters(self) -> None:
+    async def test_dense_search_with_filters(self: Any) -> None:
         """Test dense search with metadata filters."""
         config = {"collection_name": "filtered_search"}
         retriever = MilvusRetriever(config)
@@ -260,7 +260,7 @@ class TestMilvusRetrieverCore:
         assert "expr" in search_call[1]
 
     @pytest.mark.asyncio
-    async def test_sparse_search_basic(self) -> None:
+    async def test_sparse_search_basic(self: Any) -> None:
         """Test basic sparse search."""
         config = {"collection_name": "sparse_test"}
         retriever = MilvusRetriever(config)
@@ -292,7 +292,7 @@ class TestMilvusRetrieverCore:
                 assert results[0].retrieval_method == "sparse"
 
     @pytest.mark.asyncio
-    async def test_build_filter_expression(self) -> None:
+    async def test_build_filter_expression(self: Any) -> None:
         """Test filter expression building."""
         config = {"collection_name": "filter_test"}
         retriever = MilvusRetriever(config)
@@ -319,7 +319,7 @@ class TestMilvusRetrieverCore:
         assert "created_after" in expr
 
     @pytest.mark.asyncio
-    async def test_get_collection_stats(self) -> None:
+    async def test_get_collection_stats(self: Any) -> None:
         """Test getting collection statistics."""
         config = {"collection_name": "stats_test"}
         retriever = MilvusRetriever(config)
@@ -345,7 +345,7 @@ class TestMilvusRetrieverCore:
                 assert stats["name"] == "stats_test"
 
     @pytest.mark.asyncio
-    async def test_get_document(self) -> None:
+    async def test_get_document(self: Any) -> None:
         """Test getting a single document by ID."""
         config = {"collection_name": "get_doc_test"}
         retriever = MilvusRetriever(config)
@@ -376,7 +376,7 @@ class TestMilvusRetrieverCore:
                 )  # get_document doesn't retrieve embeddings
 
     @pytest.mark.asyncio
-    async def test_get_document_not_found(self) -> None:
+    async def test_get_document_not_found(self: Any) -> None:
         """Test getting document that doesn't exist."""
         config = {"collection_name": "not_found_test"}
         retriever = MilvusRetriever(config)
@@ -390,7 +390,7 @@ class TestMilvusRetrieverCore:
         assert document is None
 
     @pytest.mark.asyncio
-    async def test_delete_document(self) -> None:
+    async def test_delete_document(self: Any) -> None:
         """Test document deletion."""
         config = {"collection_name": "delete_test"}
         retriever = MilvusRetriever(config)
@@ -410,7 +410,7 @@ class TestMilvusRetrieverCore:
         mock_collection.flush.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_delete_document_not_found(self) -> None:
+    async def test_delete_document_not_found(self: Any) -> None:
         """Test deleting non-existent document."""
         config = {"collection_name": "delete_missing"}
         retriever = MilvusRetriever(config)
@@ -436,7 +436,7 @@ class TestMilvusRetrieverHybridSearch:
     """Test hybrid search functionality."""
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_rrf(self) -> None:
+    async def test_hybrid_search_rrf(self: Any) -> None:
         """Test hybrid search with RRF fusion."""
         config = {"collection_name": "hybrid_rrf"}
         retriever = MilvusRetriever(config)
@@ -480,7 +480,7 @@ class TestMilvusRetrieverHybridSearch:
                             assert results[0].retrieval_method == "hybrid_rrf_native"
 
     @pytest.mark.asyncio
-    async def test_hybrid_search_alpha_fallback(self) -> None:
+    async def test_hybrid_search_alpha_fallback(self: Any) -> None:
         """Test hybrid search with alpha fusion fallback."""
         config = {"collection_name": "hybrid_alpha"}
         retriever = MilvusRetriever(config)
@@ -546,7 +546,7 @@ class TestMilvusRetrieverEdgeCases:
     """Test edge cases and error conditions."""
 
     @pytest.mark.asyncio
-    async def test_search_empty_results(self) -> None:
+    async def test_search_empty_results(self: Any) -> None:
         """Test search with no results."""
         config = {"collection_name": "empty_results"}
         retriever = MilvusRetriever(config)
@@ -562,7 +562,7 @@ class TestMilvusRetrieverEdgeCases:
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_operations_without_collection(self) -> None:
+    async def test_operations_without_collection(self: Any) -> None:
         """Test operations that require collection when none exists."""
         config = {"collection_name": "no_collection"}
         retriever = MilvusRetriever(config)
@@ -577,7 +577,7 @@ class TestMilvusRetrieverEdgeCases:
         with pytest.raises((RuntimeError, AttributeError)):
             await retriever.get_document("test")
 
-    def test_config_edge_cases(self) -> None:
+    def test_config_edge_cases(self: Any) -> None:
         """Test configuration edge cases."""
         # Minimal config
         config = {}
@@ -595,7 +595,7 @@ class TestMilvusRetrieverEdgeCases:
         # Extra fields should not cause errors
 
     @pytest.mark.asyncio
-    async def test_insert_documents_validation(self) -> None:
+    async def test_insert_documents_validation(self: Any) -> None:
         """Test document validation during insertion."""
         config = {"collection_name": "validation_test"}
         retriever = MilvusRetriever(config)
@@ -622,7 +622,7 @@ class TestMilvusRetrieverIntegration:
     """Integration-style tests."""
 
     @pytest.mark.asyncio
-    async def test_full_workflow_simulation(self) -> None:
+    async def test_full_workflow_simulation(self: Any) -> None:
         """Test a complete workflow with all mocks."""
         config = {"collection_name": "integration_test", "dimension": 768}
         retriever = MilvusRetriever(config)

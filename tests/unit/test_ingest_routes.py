@@ -5,6 +5,7 @@ Unit tests for askme.api.routes.ingest to raise coverage.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
@@ -28,12 +29,12 @@ from askme.ingest.ingest_service import IngestionStats, IngestionTask, TaskStatu
 
 
 class _Req:
-    def __init__(self) -> None:
+    def __init__(self: Any) -> None:
         self.app = SimpleNamespace(state=SimpleNamespace())
 
 
 @pytest.mark.asyncio
-async def test_ingest_documents_validations_tmpdir(tmp_path) -> None:
+async def test_ingest_documents_validations_tmpdir(tmp_path: Path) -> None:
     settings = Settings()
     req = _Req()
 
@@ -79,15 +80,15 @@ async def test_ingest_documents_validations_tmpdir(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_documents_calls_service(tmp_path) -> None:
+async def test_ingest_documents_calls_service(tmp_path: Path) -> None:
     settings = Settings()
     req = _Req()
 
     class _Svc:
-        async def ingest_file(self, **kwargs: Any) -> str:
+        async def ingest_file(self: Any, **kwargs: Any) -> str:
             return "tid-file"
 
-        async def ingest_directory(self, **kwargs: Any) -> str:
+        async def ingest_directory(self: Any, **kwargs: Any) -> str:
             return "tid-dir"
 
     req.app.state.ingestion_service = _Svc()
@@ -110,15 +111,17 @@ async def test_ingest_documents_calls_service(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_and_directory_endpoints_call_service(tmp_path) -> None:
+async def test_ingest_file_and_directory_endpoints_call_service(
+    tmp_path: Path,
+) -> None:
     settings = Settings()
     req = _Req()
 
     class _Svc:
-        async def ingest_file(self, **kwargs: Any) -> str:
+        async def ingest_file(self: Any, **kwargs: Any) -> str:
             return "fid"
 
-        async def ingest_directory(self, **kwargs: Any) -> str:
+        async def ingest_directory(self: Any, **kwargs: Any) -> str:
             return "did"
 
     req.app.state.ingestion_service = _Svc()
@@ -135,11 +138,11 @@ async def test_ingest_file_and_directory_endpoints_call_service(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
-async def test_upload_and_ingest_validation(tmp_path) -> None:
+async def test_upload_and_ingest_validation(tmp_path: Path) -> None:
     settings = Settings()
 
     class _Upload:
-        def __init__(self, name: str):
+        def __init__(self: Any, name: str) -> Any:
             self.filename = name
 
     # unsupported extension
@@ -166,7 +169,7 @@ async def test_get_ingestion_status_and_stats() -> None:
 
     # attach service
     class _Svc:
-        def __init__(self) -> None:
+        def __init__(self: Any) -> None:
             now = datetime.utcnow()
             self._task = IngestionTask(
                 task_id="tid",
@@ -182,10 +185,10 @@ async def test_get_ingestion_status_and_stats() -> None:
                 processed_chunks=4,
             )
 
-        async def get_task_status(self, tid: str) -> Optional[IngestionTask]:
+        async def get_task_status(self: Any, tid: str) -> Optional[IngestionTask]:
             return self._task if tid == "tid" else None
 
-        async def get_ingestion_stats(self) -> IngestionStats:
+        async def get_ingestion_stats(self: Any) -> IngestionStats:
             return IngestionStats(
                 total_documents=3,
                 total_chunks=15,

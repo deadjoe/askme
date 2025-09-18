@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Pytest configuration and shared fixtures.
 """
@@ -11,7 +13,7 @@ from askme.retriever.base import Document, RetrievalResult
 
 
 @pytest.fixture
-def mock_settings():
+def mock_settings() -> Any:
     """Mock settings for testing."""
     return Settings(
         vector_backend="weaviate",
@@ -23,7 +25,7 @@ def mock_settings():
 
 
 @pytest.fixture
-def sample_document():
+def sample_document() -> Any:
     """Sample document for testing."""
     return Document(
         id="doc_001",
@@ -39,7 +41,7 @@ def sample_document():
 
 
 @pytest.fixture
-def sample_retrieval_result():
+def sample_retrieval_result() -> Any:
     """Sample retrieval result for testing."""
     doc = Document(
         id="doc_001",
@@ -56,7 +58,7 @@ def sample_retrieval_result():
 
 
 @pytest.fixture
-def mock_vector_retriever():
+def mock_vector_retriever() -> Any:
     """Mock vector retriever for testing."""
     mock = AsyncMock()
     mock.connect.return_value = None
@@ -67,7 +69,7 @@ def mock_vector_retriever():
 
 
 @pytest.fixture
-def mock_embedding_service():
+def mock_embedding_service() -> Any:
     """Mock embedding service for testing."""
     mock = AsyncMock()
     mock.initialize.return_value = None

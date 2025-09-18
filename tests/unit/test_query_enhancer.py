@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for query enhancement utilities (HyDE and RAG-Fusion).
 """
@@ -15,13 +17,13 @@ from askme.enhancer.query_enhancer import (
 class TestHydeConfig:
     """Test HyDE configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default HyDE configuration values."""
         config = HydeConfig()
         assert config.enabled is False
         assert config.max_tokens == 256
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom HyDE configuration."""
         config = HydeConfig(enabled=True, max_tokens=512)
         assert config.enabled is True
@@ -31,13 +33,13 @@ class TestHydeConfig:
 class TestRagFusionConfig:
     """Test RAG-Fusion configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default RAG-Fusion configuration values."""
         config = RagFusionConfig()
         assert config.enabled is False
         assert config.num_queries == 3
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom RAG-Fusion configuration."""
         config = RagFusionConfig(enabled=True, num_queries=5)
         assert config.enabled is True
@@ -47,7 +49,7 @@ class TestRagFusionConfig:
 class TestGenerateHydePassage:
     """Test HyDE hypothetical passage generation."""
 
-    def test_basic_passage_generation(self) -> None:
+    def test_basic_passage_generation(self: Any) -> None:
         """Test basic HyDE passage generation."""
         query = "machine learning algorithms"
         passage = generate_hyde_passage(query)
@@ -61,7 +63,7 @@ class TestGenerateHydePassage:
         assert "background" in passage.lower()
         assert "key concepts" in passage.lower()
 
-    def test_passage_with_custom_max_tokens(self) -> None:
+    def test_passage_with_custom_max_tokens(self: Any) -> None:
         """Test HyDE passage generation with custom max_tokens."""
         query = "deep learning"
 
@@ -77,7 +79,7 @@ class TestGenerateHydePassage:
         # Short passage may be truncated, so just check it starts correctly
         assert short_passage.lower().startswith("this passage discusses")
 
-    def test_passage_with_special_characters(self) -> None:
+    def test_passage_with_special_characters(self: Any) -> None:
         """Test HyDE passage generation with special characters in query."""
         query = "C++ programming & data structures"
         passage = generate_hyde_passage(query)
@@ -88,7 +90,7 @@ class TestGenerateHydePassage:
         assert "C++" in passage
         assert "&" in passage
 
-    def test_passage_with_empty_query(self) -> None:
+    def test_passage_with_empty_query(self: Any) -> None:
         """Test HyDE passage generation with empty query."""
         query = ""
         passage = generate_hyde_passage(query)
@@ -98,7 +100,7 @@ class TestGenerateHydePassage:
         # Should still generate template content
         assert "passage discusses" in passage.lower()
 
-    def test_passage_with_very_long_query(self) -> None:
+    def test_passage_with_very_long_query(self: Any) -> None:
         """Test HyDE passage generation with very long query."""
         query = "artificial intelligence machine learning deep learning " * 50
         passage = generate_hyde_passage(query, max_tokens=50)
@@ -108,7 +110,7 @@ class TestGenerateHydePassage:
         # Should contain at least part of the query
         assert "artificial intelligence" in passage
 
-    def test_passage_deterministic(self) -> None:
+    def test_passage_deterministic(self: Any) -> None:
         """Test that HyDE passage generation is deterministic."""
         query = "natural language processing"
 
@@ -117,7 +119,7 @@ class TestGenerateHydePassage:
 
         assert passage1 == passage2  # Should be identical
 
-    def test_passage_template_structure(self) -> None:
+    def test_passage_template_structure(self: Any) -> None:
         """Test that HyDE passage follows expected template structure."""
         query = "computer vision applications"
         passage = generate_hyde_passage(query)
@@ -138,7 +140,7 @@ class TestGenerateHydePassage:
 class TestGenerateFusionQueries:
     """Test RAG-Fusion query generation."""
 
-    def test_basic_fusion_queries(self) -> None:
+    def test_basic_fusion_queries(self: Any) -> None:
         """Test basic fusion query generation."""
         original_query = "machine learning algorithms"
         queries = generate_fusion_queries(original_query)
@@ -151,7 +153,7 @@ class TestGenerateFusionQueries:
         # Should have different variants
         assert len(set(queries)) == len(queries)  # All unique
 
-    def test_fusion_queries_with_custom_num(self) -> None:
+    def test_fusion_queries_with_custom_num(self: Any) -> None:
         """Test fusion query generation with custom number."""
         original_query = "deep learning neural networks"
 
@@ -169,7 +171,7 @@ class TestGenerateFusionQueries:
         assert queries_2[0] == original_query
         assert queries_5[0] == original_query
 
-    def test_fusion_queries_variants(self) -> None:
+    def test_fusion_queries_variants(self: Any) -> None:
         """Test that fusion queries contain expected variants."""
         original_query = "natural language processing"
         queries = generate_fusion_queries(original_query, num_queries=4)
@@ -193,7 +195,7 @@ class TestGenerateFusionQueries:
         ]
         assert len(steps_queries) >= 1
 
-    def test_fusion_queries_with_zero_num(self) -> None:
+    def test_fusion_queries_with_zero_num(self: Any) -> None:
         """Test fusion query generation with zero queries requested."""
         original_query = "computer vision"
         queries = generate_fusion_queries(original_query, num_queries=0)
@@ -202,7 +204,7 @@ class TestGenerateFusionQueries:
         assert len(queries) >= 1
         assert queries[0] == original_query
 
-    def test_fusion_queries_with_empty_query(self) -> None:
+    def test_fusion_queries_with_empty_query(self: Any) -> None:
         """Test fusion query generation with empty original query."""
         original_query = ""
         queries = generate_fusion_queries(original_query, num_queries=3)
@@ -215,7 +217,7 @@ class TestGenerateFusionQueries:
         for query in queries[1:]:
             assert isinstance(query, str)
 
-    def test_fusion_queries_deduplication(self) -> None:
+    def test_fusion_queries_deduplication(self: Any) -> None:
         """Test that fusion queries are properly deduplicated."""
         # Use a query that might generate similar variants
         original_query = "definition"
@@ -227,7 +229,7 @@ class TestGenerateFusionQueries:
         # Original should be first
         assert queries[0] == original_query
 
-    def test_fusion_queries_deterministic(self) -> None:
+    def test_fusion_queries_deterministic(self: Any) -> None:
         """Test that fusion query generation is deterministic."""
         original_query = "artificial intelligence applications"
 
@@ -236,7 +238,7 @@ class TestGenerateFusionQueries:
 
         assert queries1 == queries2  # Should be identical
 
-    def test_fusion_queries_with_special_characters(self) -> None:
+    def test_fusion_queries_with_special_characters(self: Any) -> None:
         """Test fusion queries with special characters in original query."""
         original_query = "C++ programming & algorithms"
         queries = generate_fusion_queries(original_query, num_queries=3)
@@ -250,7 +252,7 @@ class TestGenerateFusionQueries:
             if "C++" in original_query and original_query in query:
                 assert "C++" in query
 
-    def test_fusion_queries_content_relevance(self) -> None:
+    def test_fusion_queries_content_relevance(self: Any) -> None:
         """Test that fusion query variants are relevant to original."""
         original_query = "blockchain technology"
         queries = generate_fusion_queries(original_query, num_queries=4)
@@ -273,7 +275,7 @@ class TestGenerateFusionQueries:
         variant_count = sum([definition_found, benefits_found, steps_found])
         assert variant_count >= 1  # At least one variant pattern
 
-    def test_fusion_queries_max_length_handling(self) -> None:
+    def test_fusion_queries_max_length_handling(self: Any) -> None:
         """Test fusion queries with very long original query."""
         original_query = (
             "very long query about machine learning and artificial intelligence " * 10
@@ -292,7 +294,7 @@ class TestGenerateFusionQueries:
 class TestQueryEnhancementIntegration:
     """Integration tests for query enhancement utilities."""
 
-    def test_hyde_and_fusion_together(self) -> None:
+    def test_hyde_and_fusion_together(self: Any) -> None:
         """Test using HyDE and RAG-Fusion together."""
         original_query = "machine learning model evaluation"
 
@@ -316,7 +318,7 @@ class TestQueryEnhancementIntegration:
             if "machine learning" in query:
                 assert "machine learning" in passage.lower()
 
-    def test_config_integration(self) -> None:
+    def test_config_integration(self: Any) -> None:
         """Test configuration classes with enhancement functions."""
         hyde_config = HydeConfig(enabled=True, max_tokens=128)
         fusion_config = RagFusionConfig(enabled=True, num_queries=2)
