@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 """
 Unit tests for base retriever functionality.
@@ -70,6 +70,7 @@ class TestRetrievalResult:
             retrieval_method="hybrid",
             debug_info={"fusion": "alpha", "alpha": 0.5},
         )
+        assert result.debug_info is not None
         assert result.debug_info["fusion"] == "alpha"
         assert result.debug_info["alpha"] == 0.5
 
@@ -144,7 +145,7 @@ class TestSearchFusion:
 
     def test_empty_results_fusion(self: Any) -> None:
         """Test fusion with empty results."""
-        empty_results = []
+        empty_results: List[RetrievalResult] = []
         dense_results, _ = self.create_sample_results()
 
         fused = SearchFusion.alpha_fusion(dense_results, empty_results, alpha=0.5)

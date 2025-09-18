@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict, Generator, List
 
 """
 Unit tests for TruLens evaluation runner.
@@ -68,18 +68,18 @@ class TestTruLensRunner:
 
                 # Provide a dict-like environ that allows tracking setdefault calls
                 class MockEnviron(dict):
-                    def __init__(self: Any) -> Any:
+                    def __init__(self: Any) -> None:
                         super().__init__()
-                        self.setdefault = MagicMock(
-                            side_effect=lambda k, v: super(
-                                MockEnviron, self
-                            ).setdefault(k, v)
-                        )
+                        self.setdefault_called = False
+
+                    def setdefault(self, key: Any, default: Any = None) -> Any:
+                        self.setdefault_called = True
+                        return super().setdefault(key, default)
 
                 mock_os.environ = MockEnviron()
 
                 # Test data
-                samples = [
+                samples: List[Dict[str, Any]] = [
                     {
                         "question": "What is machine learning?",
                         "answer": "Machine learning is a type of AI",
@@ -172,7 +172,7 @@ class TestTruLensRunner:
                 mock_os.getenv.return_value = "http://localhost:11434/v1"
                 mock_os.environ = {}
 
-                samples = [
+                samples: List[Dict[str, Any]] = [
                     {
                         "question": "Test question?",
                         "answer": "Test answer",
@@ -217,7 +217,9 @@ class TestTruLensRunner:
                 mock_os.getenv.return_value = "http://localhost:11434/v1"
                 mock_os.environ = {}
 
-                samples = [{"question": "test", "answer": "test", "contexts": ["test"]}]
+                samples: List[Dict[str, Any]] = [
+                    {"question": "test", "answer": "test", "contexts": ["test"]}
+                ]
 
                 with pytest.raises(RuntimeError, match="TruLens evaluation failed"):
                     run_trulens(samples)
@@ -248,7 +250,7 @@ class TestTruLensRunner:
                 }.get(key, default)
 
                 class MockEnviron(dict):
-                    def __init__(self: Any) -> Any:
+                    def __init__(self: Any) -> None:
                         super().__init__()
                         self.setdefault = MagicMock(
                             side_effect=lambda k, v: super(
@@ -263,7 +265,7 @@ class TestTruLensRunner:
 
                 # Verify environment variables were set
                 assert mock_environ.get("OPENAI_API_BASE") == "http://test:8080/v1"
-                mock_environ.setdefault.assert_called()
+                assert "OPENAI_API_KEY" in mock_environ
 
     def test_trulens_multiple_samples_averaging(self: Any) -> None:
         """Test TruLens with multiple samples and score averaging."""
@@ -306,7 +308,7 @@ class TestTruLensRunner:
                 mock_os.environ = {}
 
                 # Test with two samples
-                samples = [
+                samples: List[Dict[str, Any]] = [
                     {
                         "question": "Question 1?",
                         "answer": "Answer 1",
@@ -370,7 +372,7 @@ class TestTruLensRunner:
                 mock_os.environ = {}
 
                 # Sample with missing fields
-                samples = [
+                samples: List[Dict[str, Any]] = [
                     {
                         # Missing question, answer, contexts - should default to empty strings/lists
                     }

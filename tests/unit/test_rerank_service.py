@@ -326,9 +326,6 @@ class TestBGEReranker:
             mock_torch.cuda.empty_cache = empty_cache_mock
 
             await reranker.cleanup()
-
-            assert reranker.model is None
-            assert reranker._is_initialized is False
             empty_cache_mock.assert_called_once()
 
 

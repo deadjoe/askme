@@ -1,15 +1,16 @@
-from typing import Any
+from typing import Any, Dict
 
 """
 Unit tests for query API routes.
 """
 
 from datetime import datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 from askme.api.routes.query import (
@@ -251,7 +252,7 @@ class TestQueryDocuments:
         mock_settings.rerank.cohere_enabled = False
 
         with pytest.raises(HTTPException) as exc_info:
-            await query_documents(req, mock_request, mock_settings)
+            await query_documents(req, cast(Request, mock_request), mock_settings)
 
         assert exc_info.value.status_code == 400
         assert "Cohere reranker not enabled" in str(exc_info.value.detail)
@@ -266,7 +267,9 @@ class TestQueryDocuments:
 
         # Should not raise HTTPException for Cohere validation
         # Will fall back to mock response due to missing services
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert isinstance(response, QueryResponse)
         assert response.answer is not None
@@ -285,7 +288,9 @@ class TestQueryDocuments:
             reranker="bge_local",
         )
 
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert isinstance(response, QueryResponse)
         assert response.answer is not None
@@ -320,7 +325,9 @@ class TestQueryDocuments:
         """Test mock response with RRF enabled."""
         req = QueryRequest(q="test query", include_debug=True, use_rrf=True, rrf_k=80)
 
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert response.retrieval_debug is not None
         assert response.retrieval_debug.fusion_method == "rrf"
@@ -333,7 +340,9 @@ class TestQueryDocuments:
         """Test that debug info is None when include_debug=False."""
         req = QueryRequest(q="test query", include_debug=False)
 
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert response.retrieval_debug is None
 
@@ -351,7 +360,9 @@ class TestQueryDocuments:
 
         req = QueryRequest(q="test query about AI")
 
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert response.answer == "Generated answer with citations [Doc 001] [Doc 002]"
         # Should have called generator with passages
@@ -372,7 +383,9 @@ class TestQueryDocuments:
 
         req = QueryRequest(q="test query")
 
-        response = await query_documents(req, mock_request, mock_settings)
+        response = await query_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         # Should fall back to default answer template
         assert "Based on the provided context" in response.answer
@@ -386,7 +399,7 @@ class TestQueryDocuments:
         """Test mock response handling when request is None."""
         req = QueryRequest(q="test query")
 
-        response = await query_documents(req, None, mock_settings)
+        response = await query_documents(req, cast(Request, None), mock_settings)
 
         # Should fall back to default answer template
         assert "Based on the provided context" in response.answer
@@ -410,7 +423,9 @@ class TestRetrieveDocuments:
             rrf_k=40,
         )
 
-        response = await retrieve_documents(req, mock_request, mock_settings)
+        response = await retrieve_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert isinstance(response, RetrievalResponse)
         assert len(response.documents) == 1
@@ -444,7 +459,9 @@ class TestRetrieveDocuments:
         """Test retrieval response with RRF enabled."""
         req = RetrievalRequest(q="test query", use_rrf=True, rrf_k=70)
 
-        response = await retrieve_documents(req, mock_request, mock_settings)
+        response = await retrieve_documents(
+            req, cast(Request, mock_request), mock_settings
+        )
 
         assert response.retrieval_debug.fusion_method == "rrf"
         assert response.retrieval_debug.rrf_k == 70
@@ -599,7 +616,8 @@ class TestRouterIntegration:
     def test_router_has_expected_endpoints(self: Any) -> None:
         """Test that router has all expected endpoints."""
         # Get all routes from router
-        routes = [route.path for route in router.routes]
+        routes = [getattr(route, "path", None) for route in router.routes]
+        routes = [path for path in routes if isinstance(path, str)]
 
         # Check main endpoints exist
         assert "/" in routes  # query_documents
@@ -609,7 +627,12 @@ class TestRouterIntegration:
 
     def test_router_endpoint_methods(self: Any) -> None:
         """Test that endpoints have correct HTTP methods."""
-        route_methods = {route.path: route.methods for route in router.routes}
+        route_methods: Dict[str, Any] = {}
+        for route in router.routes:
+            path = getattr(route, "path", None)
+            methods = getattr(route, "methods", None)
+            if isinstance(path, str) and methods is not None:
+                route_methods[path] = methods
 
         assert "POST" in route_methods["/"]
         assert "POST" in route_methods["/retrieve"]

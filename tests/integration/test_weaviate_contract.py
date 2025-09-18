@@ -5,7 +5,7 @@ Skips if WEAVIATE_URL not set or weaviate client not available.
 """
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -19,7 +19,7 @@ def test_weaviate_hybrid_contract() -> None:
         pytest.skip("weaviate client not available")
 
     url = os.environ["WEAVIATE_URL"]
-    client = weaviate.connect_to_custom(url=url)
+    client = cast(Any, weaviate).connect_to_custom(url=url)
 
     try:
         cname = "AskmeContract"
@@ -37,7 +37,8 @@ def test_weaviate_hybrid_contract() -> None:
             ],
             vectorizer_config=wcfg.Configure.Vectorizer.none(),
             vector_index_config=wcfg.Configure.VectorIndex.hnsw(
-                distance=wcfg.VectorDistances.COSINE
+                distance_metric=wcfg.VectorDistances.COSINE,
+                multi_vector=None,
             ),
         )
         col = client.collections.get(cname)

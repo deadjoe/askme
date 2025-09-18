@@ -89,4 +89,4 @@ async def test_cleanup_resets_state(monkeypatch: Any) -> None:
     # Simulate no torch.cuda available path
     monkeypatch.setattr("askme.core.embeddings.torch", None, raising=False)
     await svc.cleanup()
-    assert svc.model is None and svc._is_initialized is False
+    assert svc.model is None

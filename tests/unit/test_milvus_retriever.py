@@ -192,7 +192,7 @@ class TestMilvusRetrieverCore:
     @pytest.mark.asyncio
     async def test_insert_documents_no_collection(self: Any) -> None:
         """Test insertion failure without collection."""
-        config = {"collection_name": "no_collection"}
+        config: Dict[str, Any] = {"collection_name": "no_collection"}
         retriever = MilvusRetriever(config)
 
         docs = [
@@ -308,12 +308,12 @@ class TestMilvusRetrieverCore:
         assert "document.pdf" in expr
 
         # Test multiple filters
-        filters = {
+        multi_filters: Dict[str, Any] = {
             "tags": ["important", "urgent"],
             "source": "test.txt",
             "created_after": "2023-01-01",
         }
-        expr = retriever._build_filter_expression(filters)
+        expr = retriever._build_filter_expression(multi_filters)
         assert "tags" in expr
         assert "source" in expr
         assert "created_after" in expr
@@ -580,7 +580,7 @@ class TestMilvusRetrieverEdgeCases:
     def test_config_edge_cases(self: Any) -> None:
         """Test configuration edge cases."""
         # Minimal config
-        config = {}
+        config: Dict[str, Any] = {}
         retriever = MilvusRetriever(config)
         assert retriever.collection_name == "askme_default"
 

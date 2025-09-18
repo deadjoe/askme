@@ -6,9 +6,10 @@ with app.state services present to raise coverage beyond fallback branches.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import pytest
+from fastapi import Request
 
 from askme.api.routes.query import (
     QueryRequest,
@@ -73,14 +74,14 @@ async def test_query_documents_real_path_debug_alpha() -> None:
         async def generate(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return "generated answer"
 
-    req.app.state.embedding_service = _Emb()
-    req.app.state.retriever = _Ret()
-    req.app.state.reranking_service = _RR()
-    req.app.state.generator = _Gen()
+    cast(Any, req.app.state).embedding_service = _Emb()
+    cast(Any, req.app.state).retriever = _Ret()
+    cast(Any, req.app.state).reranking_service = _RR()
+    cast(Any, req.app.state).generator = _Gen()
 
     settings = Settings()
     q = QueryRequest(q="what is AI?", include_debug=True, use_rrf=False, alpha=0.7)
-    resp = await query_documents(q, req, settings)
+    resp = await query_documents(q, cast(Request, req), settings)
 
     assert resp.answer == "generated answer"
     assert len(resp.citations) == 2
@@ -108,14 +109,14 @@ async def test_retrieve_documents_real_path_rrf_enabled_hybrid_fallbacks() -> No
         async def sparse_search(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return []  # force fallback to alpha extremes
 
-    req.app.state.embedding_service = _Emb()
-    req.app.state.retriever = _Ret()
+    cast(Any, req.app.state).embedding_service = _Emb()
+    cast(Any, req.app.state).retriever = _Ret()
 
     settings = Settings()
     r = RetrievalRequest(
         q="test", use_rrf=True, rrf_k=70, use_hyde=True, use_rag_fusion=True
     )
-    resp = await retrieve_documents(r, req, settings)
+    resp = await retrieve_documents(r, cast(Request, req), settings)
 
     assert len(resp.documents) > 0
     assert resp.retrieval_debug is not None

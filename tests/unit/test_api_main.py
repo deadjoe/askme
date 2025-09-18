@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Set
 
 """
 Unit tests for FastAPI app wiring in askme.api.main
@@ -8,10 +8,11 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
-def _build_patched_app() -> Any:
+def _build_patched_app() -> FastAPI:
     # Patch heavy components referenced inside lifespan
     with (
         patch("askme.api.main.BGEEmbeddingService", autospec=True) as _emb,
@@ -42,7 +43,12 @@ def _build_patched_app() -> Any:
 def test_create_app_routes() -> None:
     app = _build_patched_app()
     # Verify router prefixes registered
-    paths = {route.path for route in app.routes}
+    paths: Set[str] = {
+        path
+        for route in app.routes
+        for path in [getattr(route, "path", None)]
+        if isinstance(path, str)
+    }
     assert "/health/ping" in paths or any("/health" in p for p in paths)
     assert any("/query" in p for p in paths)
     assert any("/ingest" in p for p in paths)

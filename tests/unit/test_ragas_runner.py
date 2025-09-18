@@ -11,25 +11,26 @@ import pytest
 from askme.evals.ragas_runner import run_ragas
 
 
-class _FakeSeries(list):
-    def mean(self: Any) -> float:
-        return sum(self) / len(self)
+class _FakeSeries(list[float]):
+    def mean(self) -> float:
+        total = sum(float(x) for x in self)
+        return total / len(self)
 
 
 class _DataFrameLike:
-    def __init__(self: Any, columns: Dict[str, List[float]]) -> None:
+    def __init__(self, columns: Dict[str, List[float]]) -> None:
         self.columns = list(columns.keys())
         self._cols = columns
 
-    def __getitem__(self: Any, key: str) -> Any:
+    def __getitem__(self, key: str) -> _FakeSeries:
         return _FakeSeries(self._cols[key])
 
 
 class _DictLikeResult:
-    def __init__(self: Any, payload: Dict[str, Any]) -> None:
-        self._payload = payload
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self._payload: Dict[str, Any] = payload
 
-    def to_dict(self: Any) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return self._payload
 
 

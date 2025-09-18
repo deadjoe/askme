@@ -4,7 +4,7 @@ More tests for WeaviateRetriever to push coverage: stats dict path, sync batch, 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,7 +39,7 @@ async def test_get_collection_stats_total_count_dict_path() -> None:
     async def _ensure() -> Any:
         return col
 
-    r._ensure_collection = _ensure
+    cast(Any, r)._ensure_collection = _ensure
     out = await r.get_collection_stats()
     assert out["num_entities"] == 123
 
@@ -73,7 +73,7 @@ async def test_insert_documents_sync_batch_path() -> None:
     async def _ensure() -> Any:
         return c
 
-    r._ensure_collection = _ensure
+    cast(Any, r)._ensure_collection = _ensure
     ids = await r.insert_documents(
         [
             Document(
@@ -100,7 +100,7 @@ async def test_get_document_fallback_get_by_id() -> None:
     async def _ensure2() -> Any:
         return col
 
-    r._ensure_collection = _ensure2
+    cast(Any, r)._ensure_collection = _ensure2
     doc = await r.get_document("d")
     assert doc and doc.id == "d"
 
@@ -127,10 +127,10 @@ async def test__ensure_collection_creates_when_get_fails() -> None:
 
     # Patch create_collection to set r.collection
     async def _create(dim: int) -> Any:
-        r.collection = MagicMock()
+        cast(Any, r).collection = MagicMock()
         return None
 
-    r.create_collection = _create
+    cast(Any, r).create_collection = _create
     col = await r._ensure_collection()
     assert col is not None
 
@@ -151,7 +151,7 @@ async def test_delete_document_multiple_matches() -> None:
     async def _ensure() -> Any:
         return col
 
-    r._ensure_collection = _ensure
+    cast(Any, r)._ensure_collection = _ensure
     ok = await r.delete_document("d")
     assert ok is True
     assert col.data.objects.delete_by_id.call_count == 2
