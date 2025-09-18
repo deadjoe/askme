@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 """
 Unit tests for embedding service.
@@ -96,8 +96,8 @@ class TestEmbeddingManager:
         """Test embedding caching behavior."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
-        service.get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
-        service.get_sparse_embedding = AsyncMock(return_value={1: 0.5})
+        cast(Any, service).get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
+        cast(Any, service).get_sparse_embedding = AsyncMock(return_value={1: 0.5})
 
         manager = EmbeddingManager(service)
 
@@ -109,6 +109,8 @@ class TestEmbeddingManager:
 
         assert result1 == result2
         # Service should only be called once due to caching
+        assert isinstance(service.get_dense_embedding, AsyncMock)
+        assert isinstance(service.get_sparse_embedding, AsyncMock)
         service.get_dense_embedding.assert_called_once()
         service.get_sparse_embedding.assert_called_once()
 
@@ -116,8 +118,8 @@ class TestEmbeddingManager:
         """Test batch embedding processing."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
-        service.get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
-        service.get_sparse_embedding = AsyncMock(return_value={1: 0.5})
+        cast(Any, service).get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
+        cast(Any, service).get_sparse_embedding = AsyncMock(return_value={1: 0.5})
 
         manager = EmbeddingManager(service)
 

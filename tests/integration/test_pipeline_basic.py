@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -36,7 +38,7 @@ async def test_basic_pipeline() -> None:
         print(f"   ✓ Reranker model: {settings.rerank.local_model}")
     except Exception as e:
         print(f"   ❌ Configuration failed: {e}")
-        return False
+        pytest.fail(f"Configuration failed: {e}")
 
     # Test 2: Document processing
     print("\n2️⃣ Testing document processing...")
@@ -79,7 +81,7 @@ The system implements a complete RAG pipeline with:
 
     except Exception as e:
         print(f"   ❌ Document processing failed: {e}")
-        return False
+        pytest.fail(f"Document processing failed: {e}")
 
     # Test 3: Embedding service (mock without actual model loading)
     print("\n3️⃣ Testing embedding service initialization...")
@@ -98,7 +100,7 @@ The system implements a complete RAG pipeline with:
 
     except Exception as e:
         print(f"   ❌ Embedding service test failed: {e}")
-        return False
+        pytest.fail(f"Embedding service test failed: {e}")
 
     # Test 4: Reranking service
     print("\n4️⃣ Testing reranking service...")
@@ -118,7 +120,7 @@ The system implements a complete RAG pipeline with:
 
     except Exception as e:
         print(f"   ❌ Reranking service test failed: {e}")
-        return False
+        pytest.fail(f"Reranking service test failed: {e}")
 
     # Test 5: Vector retriever configuration
     print("\n5️⃣ Testing vector database configuration...")
@@ -136,7 +138,7 @@ The system implements a complete RAG pipeline with:
 
     except Exception as e:
         print(f"   ❌ Vector retriever test failed: {e}")
-        return False
+        pytest.fail(f"Vector retriever test failed: {e}")
 
     # Test 6: API route imports
     print("\n6️⃣ Testing API components...")
@@ -149,7 +151,7 @@ The system implements a complete RAG pipeline with:
 
     except Exception as e:
         print(f"   ❌ API components test failed: {e}")
-        return False
+        pytest.fail(f"API components test failed: {e}")
 
     print("\n🎉 All tests passed! askme pipeline is ready for deployment.")
     print("\n📋 Next steps:")
@@ -161,9 +163,9 @@ The system implements a complete RAG pipeline with:
     print("   3. Test document ingestion: ./scripts/ingest.sh /path/to/documents")
     print("   4. Test querying: ./scripts/answer.sh 'What is machine learning?'")
 
-    return True
+    return None
 
 
 if __name__ == "__main__":
-    success = asyncio.run(test_basic_pipeline())
-    sys.exit(0 if success else 1)
+    asyncio.run(test_basic_pipeline())
+    sys.exit(0)

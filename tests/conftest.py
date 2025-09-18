@@ -15,13 +15,15 @@ from askme.retriever.base import Document, RetrievalResult
 @pytest.fixture
 def mock_settings() -> Any:
     """Mock settings for testing."""
-    return Settings(
-        vector_backend="weaviate",
-        database={"host": "localhost", "port": 19530},
-        embedding={"model": "BAAI/bge-m3", "dimension": 1024},
-        rerank={"local_enabled": True, "local_model": "BAAI/bge-reranker-v2.5"},
-        llm={"provider": "local", "model": "llama2"},
-    )
+    settings = Settings()
+    settings.vector_backend = "weaviate"
+    settings.database.host = "localhost"
+    settings.database.port = 19530
+    settings.embedding.model = "BAAI/bge-m3"
+    settings.embedding.dimension = 1024
+    settings.rerank.local_enabled = True
+    settings.rerank.local_model = "BAAI/bge-reranker-v2.5"
+    return settings
 
 
 @pytest.fixture

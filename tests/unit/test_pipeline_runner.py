@@ -6,7 +6,7 @@ Covers fallback (no services), single-query path, and multi-query (HyDE+RAG-Fusi
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import pytest
 
@@ -76,10 +76,10 @@ async def test_run_pipeline_once_basic_single_query_path() -> None:
         async def generate(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return "final answer"
 
-    app.state.embedding_service = _Emb()
-    app.state.retriever = _Ret()
-    app.state.reranking_service = _RR()
-    app.state.generator = _Gen()
+    cast(Any, app.state).embedding_service = _Emb()
+    cast(Any, app.state).retriever = _Ret()
+    cast(Any, app.state).reranking_service = _RR()
+    cast(Any, app.state).generator = _Gen()
 
     result = await run_pipeline_once(app, "what is RAG?", settings)
     assert result.answer == "final answer"
@@ -121,10 +121,10 @@ async def test_run_pipeline_once_with_hyde_and_rag_fusion_rrf() -> None:
         async def generate(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             return "answer with rrf"
 
-    app.state.embedding_service = _Emb()
-    app.state.retriever = _Ret()
-    app.state.reranking_service = _RR()
-    app.state.generator = _Gen()
+    cast(Any, app.state).embedding_service = _Emb()
+    cast(Any, app.state).retriever = _Ret()
+    cast(Any, app.state).reranking_service = _RR()
+    cast(Any, app.state).generator = _Gen()
 
     result = await run_pipeline_once(app, "pipeline test", settings)
     # Should have executed multiple queries and still produce an answer

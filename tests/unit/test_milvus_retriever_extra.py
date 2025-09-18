@@ -4,7 +4,7 @@ More tests for MilvusRetriever to push coverage over 85%.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -37,7 +37,7 @@ async def test_hybrid_search_rrf_native_error_fallback() -> None:
     # Force native path but make hybrid_search raise so it falls back
     with patch("askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", True):
         r.collection.hybrid_search.side_effect = RuntimeError("boom")
-        r.dense_search = AsyncMock(
+        cast(Any, r).dense_search = AsyncMock(
             return_value=[
                 RetrievalResult(
                     document=Document(id="d", content="", metadata={}),
@@ -47,7 +47,7 @@ async def test_hybrid_search_rrf_native_error_fallback() -> None:
                 )
             ]
         )
-        r.sparse_search = AsyncMock(
+        cast(Any, r).sparse_search = AsyncMock(
             return_value=[
                 RetrievalResult(
                     document=Document(id="s", content="", metadata={}),

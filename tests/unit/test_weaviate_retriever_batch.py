@@ -4,7 +4,7 @@ Tests the insert_documents batch path with async context manager and awaitable a
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -48,7 +48,7 @@ async def test_insert_documents_async_batch_path() -> None:
     async def _ensure() -> Any:
         return col
 
-    r._ensure_collection = _ensure
+    cast(Any, r)._ensure_collection = _ensure
 
     docs = [
         Document(id="a", content="x", metadata={}, embedding=[0.1] * 4),
