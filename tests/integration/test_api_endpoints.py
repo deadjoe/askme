@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Integration tests for API endpoints.
 """
@@ -11,7 +13,7 @@ from askme.api.main import app
 
 
 @pytest.fixture
-def client():
+def client() -> Any:
     """Test client for the FastAPI app."""
     return TestClient(app)
 
@@ -19,7 +21,7 @@ def client():
 class TestHealthEndpoint:
     """Test health check endpoint."""
 
-    def test_health_check(self, client) -> None:
+    def test_health_check(self: Any, client: Any) -> None:
         """Test basic health check."""
         response = client.get("/health")
         assert response.status_code == 200
@@ -33,7 +35,7 @@ class TestIngestEndpoints:
     """Test document ingestion endpoints."""
 
     @patch("askme.api.routes.ingest.IngestionService")
-    def test_ingest_file_endpoint(self, mock_service, client) -> None:
+    def test_ingest_file_endpoint(self: Any, mock_service: Any, client: Any) -> None:
         """Test file ingestion endpoint."""
         # Mock the service
         mock_instance = AsyncMock()
@@ -53,7 +55,9 @@ class TestIngestEndpoints:
         assert "task_id" in data
 
     @patch("askme.api.routes.ingest.IngestionService")
-    def test_ingest_directory_endpoint(self, mock_service, client) -> None:
+    def test_ingest_directory_endpoint(
+        self: Any, mock_service: Any, client: Any
+    ) -> None:
         """Test directory ingestion endpoint."""
         # Mock the service
         mock_instance = AsyncMock()
@@ -76,7 +80,7 @@ class TestIngestEndpoints:
 class TestQueryEndpoints:
     """Test query endpoints."""
 
-    def test_query_endpoint_structure(self, client) -> None:
+    def test_query_endpoint_structure(self: Any, client: Any) -> None:
         """Test query endpoint accepts proper structure."""
         test_query = {
             "q": "What is machine learning?",
@@ -96,7 +100,7 @@ class TestQueryEndpoints:
 class TestEvaluationEndpoints:
     """Test evaluation endpoints."""
 
-    def test_run_evaluation_endpoint(self, client) -> None:
+    def test_run_evaluation_endpoint(self: Any, client: Any) -> None:
         """Test evaluation run endpoint."""
         test_data = {
             "suite": "baseline",
@@ -110,7 +114,7 @@ class TestEvaluationEndpoints:
         assert "run_id" in data
         assert data["suite"] == "baseline"
 
-    def test_get_evaluation_results(self, client) -> None:
+    def test_get_evaluation_results(self: Any, client: Any) -> None:
         """Test getting evaluation results."""
         response = client.get("/eval/runs/test_run_123")
         assert response.status_code == 200
@@ -118,7 +122,7 @@ class TestEvaluationEndpoints:
         assert "run_id" in data
         assert "status" in data
 
-    def test_list_evaluation_runs(self, client) -> None:
+    def test_list_evaluation_runs(self: Any, client: Any) -> None:
         """Test listing evaluation runs."""
         response = client.get("/eval/runs?limit=10")
         assert response.status_code == 200
@@ -126,7 +130,7 @@ class TestEvaluationEndpoints:
         assert "runs" in data
         assert "total" in data
 
-    def test_get_available_metrics(self, client) -> None:
+    def test_get_available_metrics(self: Any, client: Any) -> None:
         """Test getting available metrics."""
         response = client.get("/eval/metrics")
         assert response.status_code == 200

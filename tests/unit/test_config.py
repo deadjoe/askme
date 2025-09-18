@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for configuration management.
 """
@@ -16,14 +18,14 @@ from askme.core.config import (
 class TestDatabaseConfig:
     """Test database configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default configuration values."""
         config = DatabaseConfig()
         assert config.milvus.host == "localhost"
         assert config.milvus.port == 19530
         assert config.milvus.collection_name == "askme_hybrid"
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom configuration values."""
         config = DatabaseConfig(
             host="custom-host", port=9999, collection_name="custom_collection"
@@ -36,14 +38,14 @@ class TestDatabaseConfig:
 class TestEmbeddingConfig:
     """Test embedding configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default embedding configuration."""
         config = EmbeddingConfig()
         assert config.model == "BAAI/bge-m3"
         assert config.dimension == 1024
         assert config.batch_size == 32
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom embedding configuration."""
         config = EmbeddingConfig(model="custom-model", dimension=512, batch_size=16)
         assert config.model == "custom-model"
@@ -54,7 +56,7 @@ class TestEmbeddingConfig:
 class TestHybridConfig:
     """Test hybrid search configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default hybrid search configuration."""
         config = HybridConfig()
         assert config.alpha == 0.5
@@ -62,7 +64,7 @@ class TestHybridConfig:
         assert config.rrf_k == 60
         assert config.topk == 50
 
-    def test_alpha_validation(self) -> None:
+    def test_alpha_validation(self: Any) -> None:
         """Test alpha value validation."""
         # Valid alpha values
         config = HybridConfig(alpha=0.0)
@@ -78,7 +80,7 @@ class TestHybridConfig:
 class TestRerankConfig:
     """Test reranking configuration."""
 
-    def test_default_values(self) -> None:
+    def test_default_values(self: Any) -> None:
         """Test default reranking configuration."""
         config = RerankConfig()
         assert config.local_enabled is True
@@ -86,7 +88,7 @@ class TestRerankConfig:
         assert config.top_n == 8
         assert config.score_threshold == 0.0
 
-    def test_custom_values(self) -> None:
+    def test_custom_values(self: Any) -> None:
         """Test custom reranking configuration."""
         config = RerankConfig(
             local_enabled=False,
@@ -103,7 +105,7 @@ class TestRerankConfig:
 class TestSettings:
     """Test main settings class."""
 
-    def test_default_settings(self) -> None:
+    def test_default_settings(self: Any) -> None:
         """Test default settings creation."""
         settings = Settings()
         assert settings.vector_backend == "weaviate"
@@ -112,7 +114,7 @@ class TestSettings:
         assert isinstance(settings.hybrid, HybridConfig)
         assert isinstance(settings.rerank, RerankConfig)
 
-    def test_nested_config_access(self) -> None:
+    def test_nested_config_access(self: Any) -> None:
         """Test accessing nested configuration values."""
         settings = Settings()
         assert settings.database.host == "localhost"

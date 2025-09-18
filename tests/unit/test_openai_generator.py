@@ -11,22 +11,22 @@ from askme.generation.generator import OpenAIChatGenerator, Passage
 
 
 class DummyChoice:
-    def __init__(self, content: str) -> None:
+    def __init__(self: Any, content: str) -> None:
         self.message = type("m", (), {"content": content})
 
 
 class DummyResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(self: Any, content: str) -> None:
         self.choices = [DummyChoice(content)]
 
 
 class DummyClient:
-    def __init__(self) -> None:
+    def __init__(self: Any) -> None:
         self.chat = type(
             "c", (), {"completions": type("cc", (), {"create": self._create})}
         )
 
-    def _create(self, **_: Dict[str, Any]) -> DummyResponse:
+    def _create(self: Any, **_: Dict[str, Any]) -> DummyResponse:
         return DummyResponse("ok")
 
 

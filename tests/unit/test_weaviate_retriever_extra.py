@@ -36,7 +36,7 @@ async def test_get_collection_stats_total_count_dict_path() -> None:
     agg = {"total_count": 123}
     col.aggregate.over_all.return_value = agg
 
-    async def _ensure():
+    async def _ensure() -> Any:
         return col
 
     r._ensure_collection = _ensure
@@ -45,18 +45,18 @@ async def test_get_collection_stats_total_count_dict_path() -> None:
 
 
 class _SyncBatch:
-    def __enter__(self):
+    def __enter__(self: Any) -> Any:
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self: Any, exc_type: Any, exc: Any, tb: Any) -> Any:
         return False
 
-    def add_object(self, **kwargs: Any):  # non-awaitable
+    def add_object(self: Any, **kwargs: Any) -> Any:  # non-awaitable
         return None
 
 
 class _SyncBatcher:
-    def dynamic(self):
+    def dynamic(self: Any) -> Any:
         return _SyncBatch()
 
 
@@ -65,12 +65,12 @@ async def test_insert_documents_sync_batch_path() -> None:
     r = WeaviateRetriever({"class_name": "C"})
 
     class _Col:
-        def __init__(self) -> None:
+        def __init__(self: Any) -> None:
             self.batch = _SyncBatcher()
 
     c = _Col()
 
-    async def _ensure():
+    async def _ensure() -> Any:
         return c
 
     r._ensure_collection = _ensure
@@ -97,7 +97,7 @@ async def test_get_document_fallback_get_by_id() -> None:
     o.properties = {"content": "c", "doc_id": "d"}
     col.data.objects.get_by_id.return_value = o
 
-    async def _ensure2():
+    async def _ensure2() -> Any:
         return col
 
     r._ensure_collection = _ensure2
@@ -126,7 +126,7 @@ async def test__ensure_collection_creates_when_get_fails() -> None:
     r.client = client
 
     # Patch create_collection to set r.collection
-    async def _create(dim: int):
+    async def _create(dim: int) -> Any:
         r.collection = MagicMock()
         return None
 
@@ -148,7 +148,7 @@ async def test_delete_document_multiple_matches() -> None:
     col.query.fetch_objects.return_value = res
     col.data.objects.delete_by_id.return_value = None
 
-    async def _ensure():
+    async def _ensure() -> Any:
         return col
 
     r._ensure_collection = _ensure

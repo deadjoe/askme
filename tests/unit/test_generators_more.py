@@ -43,10 +43,10 @@ async def test_ollama_fallback_on_error(monkeypatch: Any) -> None:
     gen = LocalOllamaGenerator(cfg)
 
     class _Client:
-        async def post(self, *args: Any, **kwargs: Any):
+        async def post(self: Any, *args: Any, **kwargs: Any) -> Any:
             raise RuntimeError("boom")
 
-    async def _client_get(self) -> Any:
+    async def _client_get(self: Any) -> Any:
         return _Client()
 
     monkeypatch.setattr(LocalOllamaGenerator, "_client_get", _client_get, raising=False)
@@ -62,20 +62,20 @@ async def test_ollama_success(monkeypatch: Any) -> None:
     gen = LocalOllamaGenerator(cfg)
 
     class _Resp:
-        def raise_for_status(self):
+        def raise_for_status(self: Any) -> Any:
             return None
 
-        def json(self):
+        def json(self: Any) -> Any:
             return {"response": "ok from ollama"}
 
     class _Client:
-        async def post(self, *args: Any, **kwargs: Any):
+        async def post(self: Any, *args: Any, **kwargs: Any) -> Any:
             return _Resp()
 
-        async def aclose(self):  # to support cleanup
+        async def aclose(self: Any) -> Any:  # to support cleanup
             return None
 
-    async def _client_get(self) -> Any:
+    async def _client_get(self: Any) -> Any:
         # set the private client so cleanup path closes it
         self._client = _Client()
         return self._client

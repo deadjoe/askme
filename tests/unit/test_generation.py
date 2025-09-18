@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Tests for generation module.
 """
@@ -10,7 +12,7 @@ from askme.generation.generator import Passage, SimpleTemplateGenerator
 
 class TestSimpleTemplateGenerator:
     @pytest.mark.asyncio
-    async def test_generate_with_passages(self) -> None:
+    async def test_generate_with_passages(self: Any) -> None:
         cfg = GenerationConfig(provider="simple", max_tokens=200)
         gen = SimpleTemplateGenerator(cfg)
 
@@ -25,7 +27,7 @@ class TestSimpleTemplateGenerator:
         assert "Sources:" in out
 
     @pytest.mark.asyncio
-    async def test_generate_without_passages(self) -> None:
+    async def test_generate_without_passages(self: Any) -> None:
         cfg = GenerationConfig(provider="simple", max_tokens=200)
         gen = SimpleTemplateGenerator(cfg)
         out = await gen.generate("What is RAG?", [])

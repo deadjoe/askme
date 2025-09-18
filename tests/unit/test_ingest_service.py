@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for IngestionService covering initialization, ingest flows,
 batching, stats, cancellation and cleanup helpers.
@@ -21,7 +23,7 @@ from askme.retriever.base import Document
 
 
 @pytest.fixture
-def svc(monkeypatch):
+def svc(monkeypatch: Any) -> Any:
     settings = Settings()
     # Keep batches small to exercise batching code
     settings.performance.batch.embedding_batch_size = 2
@@ -58,7 +60,7 @@ def svc(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_initialize_calls_dependencies(svc) -> None:
+async def test_initialize_calls_dependencies(svc: Any) -> None:
     await svc.initialize()
     svc.vector_retriever.connect.assert_awaited()
     svc.embedding_manager.embedding_service.initialize.assert_awaited()
@@ -66,7 +68,7 @@ async def test_initialize_calls_dependencies(svc) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_happy_path(svc, tmp_path) -> None:
+async def test_ingest_file_happy_path(svc: Any, tmp_path: Any) -> None:
     # Prepare processor to return two documents
     docs = [
         Document(id="d1", content="hello"),
@@ -88,7 +90,7 @@ async def test_ingest_file_happy_path(svc, tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ingest_directory_happy_path(svc, tmp_path) -> None:
+async def test_ingest_directory_happy_path(svc: Any, tmp_path: Any) -> None:
     # Emulate directory processing returning one Document
     docs = [Document(id="d3", content="alpha")]
     svc.processing_pipeline.process_directory = AsyncMock(return_value=docs)
@@ -103,7 +105,7 @@ async def test_ingest_directory_happy_path(svc, tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test__ingest_documents_batches_and_overwrite(svc) -> None:
+async def test__ingest_documents_batches_and_overwrite(svc: Any) -> None:
     docs = [
         Document(id=f"d{i}", content=f"text {i}") for i in range(5)
     ]  # 3 batches of size 2,2,1
@@ -126,9 +128,9 @@ async def test__ingest_documents_batches_and_overwrite(svc) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancel_task_and_cleanup(svc) -> None:
+async def test_cancel_task_and_cleanup(svc: Any) -> None:
     # Create a pending task
-    async def sleeper():
+    async def sleeper() -> Any:
         await asyncio.sleep(0.1)
 
     t = asyncio.create_task(sleeper())
@@ -146,7 +148,7 @@ async def test_cancel_task_and_cleanup(svc) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_ingestion_stats_and_cleanup_completed(svc) -> None:
+async def test_get_ingestion_stats_and_cleanup_completed(svc: Any) -> None:
     # Populate tasks representing completed and failed ones
     now = datetime.utcnow()
     svc._tasks = {

@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for embedding service.
 """
@@ -13,7 +15,7 @@ from askme.core.embeddings import BGEEmbeddingService, EmbeddingManager
 class TestBGEEmbeddingService:
     """Test BGE embedding service."""
 
-    def test_service_creation(self) -> None:
+    def test_service_creation(self: Any) -> None:
         """Test creating embedding service."""
         config = EmbeddingConfig(model="BAAI/bge-m3", dimension=1024, batch_size=16)
         service = BGEEmbeddingService(config)
@@ -25,7 +27,7 @@ class TestBGEEmbeddingService:
         assert service._is_initialized is False
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_initialization(self, mock_model_class) -> None:
+    async def test_initialization(self: Any, mock_model_class: MagicMock) -> None:
         """Test service initialization."""
         # Mock the BGE model
         mock_model = MagicMock()
@@ -40,7 +42,7 @@ class TestBGEEmbeddingService:
         mock_model_class.assert_called_once()
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_dense_embedding(self, mock_model_class) -> None:
+    async def test_get_dense_embedding(self: Any, mock_model_class: MagicMock) -> None:
         """Test getting dense embeddings."""
         # Mock the BGE model
         mock_model = MagicMock()
@@ -58,7 +60,7 @@ class TestBGEEmbeddingService:
         mock_model.encode.assert_called_once()
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_sparse_embedding(self, mock_model_class) -> None:
+    async def test_get_sparse_embedding(self: Any, mock_model_class: MagicMock) -> None:
         """Test getting sparse embeddings."""
         # Mock the BGE model
         mock_model = MagicMock()
@@ -80,7 +82,7 @@ class TestBGEEmbeddingService:
 class TestEmbeddingManager:
     """Test embedding manager with caching."""
 
-    def test_manager_creation(self) -> None:
+    def test_manager_creation(self: Any) -> None:
         """Test creating embedding manager."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -90,7 +92,7 @@ class TestEmbeddingManager:
         assert isinstance(manager._cache, dict)
         assert len(manager._cache) == 0
 
-    async def test_cache_behavior(self) -> None:
+    async def test_cache_behavior(self: Any) -> None:
         """Test embedding caching behavior."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -110,7 +112,7 @@ class TestEmbeddingManager:
         service.get_dense_embedding.assert_called_once()
         service.get_sparse_embedding.assert_called_once()
 
-    async def test_batch_processing(self) -> None:
+    async def test_batch_processing(self: Any) -> None:
         """Test batch embedding processing."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -135,7 +137,7 @@ class TestEmbeddingManager:
 class TestBGEEmbeddingServiceAdvanced:
     """Advanced tests for BGE embedding service covering uncovered code paths."""
 
-    async def test_initialize_already_initialized(self) -> None:
+    async def test_initialize_already_initialized(self: Any) -> None:
         """Test that initialize doesn't reload when already initialized."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -149,7 +151,9 @@ class TestBGEEmbeddingServiceAdvanced:
         assert service._is_initialized is True
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_initialize_import_error(self, mock_model_class) -> None:
+    async def test_initialize_import_error(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test initialization with import failure."""
         # Mock import failure
         mock_model_class.side_effect = ImportError("FlagEmbedding not available")
@@ -161,7 +165,9 @@ class TestBGEEmbeddingServiceAdvanced:
             await service.initialize()
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_encode_documents_with_batches(self, mock_model_class) -> None:
+    async def test_encode_documents_with_batches(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test encode_documents with batch processing."""
         # Mock the BGE model
         mock_model = MagicMock()
@@ -193,7 +199,9 @@ class TestBGEEmbeddingServiceAdvanced:
         assert mock_model.encode.call_count == 2
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_encode_documents_not_initialized(self, mock_model_class) -> None:
+    async def test_encode_documents_not_initialized(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test encode_documents automatically initializes."""
         mock_model = MagicMock()
 
@@ -216,7 +224,7 @@ class TestBGEEmbeddingServiceAdvanced:
         assert service._is_initialized is True
         assert len(results) == 1
 
-    async def test_encode_documents_empty_list(self) -> None:
+    async def test_encode_documents_empty_list(self: Any) -> None:
         """Test encode_documents with empty text list."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -227,7 +235,9 @@ class TestBGEEmbeddingServiceAdvanced:
         assert results == []
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_dense_embedding_not_initialized(self, mock_model_class) -> None:
+    async def test_get_dense_embedding_not_initialized(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_dense_embedding auto-initializes."""
         mock_model = MagicMock()
         mock_model.encode.return_value = {"dense_vecs": [[0.1, 0.2, 0.3]]}
@@ -241,7 +251,7 @@ class TestBGEEmbeddingServiceAdvanced:
         assert service._is_initialized is True
         assert result == [0.1, 0.2, 0.3]
 
-    async def test_get_dense_embedding_model_not_initialized(self) -> None:
+    async def test_get_dense_embedding_model_not_initialized(self: Any) -> None:
         """Test get_dense_embedding raises error when model is None."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -252,7 +262,9 @@ class TestBGEEmbeddingServiceAdvanced:
             await service.get_dense_embedding("test")
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_dense_embedding_numpy_array(self, mock_model_class) -> None:
+    async def test_get_dense_embedding_numpy_array(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_dense_embedding with numpy array response."""
         import numpy as np
 
@@ -273,7 +285,7 @@ class TestBGEEmbeddingServiceAdvanced:
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
     async def test_get_dense_embedding_dense_vectors_key(
-        self, mock_model_class
+        self: Any, mock_model_class: MagicMock
     ) -> None:
         """Test get_dense_embedding with 'dense_vectors' key."""
         mock_model = MagicMock()
@@ -290,7 +302,9 @@ class TestBGEEmbeddingServiceAdvanced:
         assert result == [0.1, 0.2, 0.3]
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_dense_embedding_no_dense_key(self, mock_model_class) -> None:
+    async def test_get_dense_embedding_no_dense_key(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_dense_embedding raises error when no dense embeddings returned."""
         mock_model = MagicMock()
         mock_model.encode.return_value = {"other_key": "value"}
@@ -305,7 +319,9 @@ class TestBGEEmbeddingServiceAdvanced:
             await service.get_dense_embedding("test")
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_sparse_embedding_not_initialized(self, mock_model_class) -> None:
+    async def test_get_sparse_embedding_not_initialized(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_sparse_embedding auto-initializes."""
         mock_model = MagicMock()
         mock_model.encode.return_value = {"lexical_weights": [{"token": 0.5}]}
@@ -319,7 +335,7 @@ class TestBGEEmbeddingServiceAdvanced:
         assert service._is_initialized is True
         assert result == {"token": 0.5}
 
-    async def test_get_sparse_embedding_model_not_initialized(self) -> None:
+    async def test_get_sparse_embedding_model_not_initialized(self: Any) -> None:
         """Test get_sparse_embedding raises error when model is None."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
@@ -330,7 +346,9 @@ class TestBGEEmbeddingServiceAdvanced:
             await service.get_sparse_embedding("test")
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_sparse_embedding_sparse_vecs_key(self, mock_model_class) -> None:
+    async def test_get_sparse_embedding_sparse_vecs_key(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_sparse_embedding with 'sparse_vecs' key."""
         mock_model = MagicMock()
         mock_sparse_vec = MagicMock()
@@ -352,7 +370,9 @@ class TestBGEEmbeddingServiceAdvanced:
             mock_convert.assert_called_once_with(mock_sparse_vec)
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_sparse_embedding_fallback(self, mock_model_class) -> None:
+    async def test_get_sparse_embedding_fallback(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test get_sparse_embedding fallback to empty dict."""
         mock_model = MagicMock()
         mock_model.encode.return_value = {"other_key": "value"}
@@ -368,7 +388,7 @@ class TestBGEEmbeddingServiceAdvanced:
         assert result == {}
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_encode_query(self, mock_model_class) -> None:
+    async def test_encode_query(self: Any, mock_model_class: MagicMock) -> None:
         """Test encode_query method."""
         import numpy as np
 
@@ -398,7 +418,9 @@ class TestBGEEmbeddingServiceAdvanced:
         assert result["sparse_embedding"] == {1: 0.8, 2: 0.6}
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_encode_query_with_instruction(self, mock_model_class) -> None:
+    async def test_encode_query_with_instruction(
+        self: Any, mock_model_class: MagicMock
+    ) -> None:
         """Test encode_query with instruction prefix."""
         mock_model = MagicMock()
         mock_model.encode.return_value = {
@@ -427,7 +449,7 @@ class TestBGEEmbeddingServiceAdvanced:
         )
 
     @patch("askme.core.embeddings.BGEM3FlagModel")
-    async def test_get_model_info(self, mock_model_class) -> None:
+    async def test_get_model_info(self: Any, mock_model_class: MagicMock) -> None:
         """Test get_model_info method."""
         mock_model = MagicMock()
         mock_model_class.return_value = mock_model
@@ -443,14 +465,14 @@ class TestBGEEmbeddingServiceAdvanced:
         assert info["supports_sparse"] is True
         assert info["device"] == service.device
 
-    def test_device_selection_cuda(self) -> None:
+    def test_device_selection_cuda(self: Any) -> None:
         """Test CUDA device selection."""
         with patch("torch.cuda.is_available", return_value=True):
             config = EmbeddingConfig()
             service = BGEEmbeddingService(config)
             assert "cuda" in service.device
 
-    def test_device_selection_cpu(self) -> None:
+    def test_device_selection_cpu(self: Any) -> None:
         """Test CPU device selection when CUDA unavailable."""
         with patch("torch.cuda.is_available", return_value=False):
             config = EmbeddingConfig()

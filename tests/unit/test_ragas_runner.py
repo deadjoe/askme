@@ -12,24 +12,24 @@ from askme.evals.ragas_runner import run_ragas
 
 
 class _FakeSeries(list):
-    def mean(self) -> float:
+    def mean(self: Any) -> float:
         return sum(self) / len(self)
 
 
 class _DataFrameLike:
-    def __init__(self, columns: Dict[str, List[float]]) -> None:
+    def __init__(self: Any, columns: Dict[str, List[float]]) -> None:
         self.columns = list(columns.keys())
         self._cols = columns
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self: Any, key: str) -> Any:
         return _FakeSeries(self._cols[key])
 
 
 class _DictLikeResult:
-    def __init__(self, payload: Dict[str, Any]) -> None:
+    def __init__(self: Any, payload: Dict[str, Any]) -> None:
         self._payload = payload
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self: Any) -> Dict[str, Any]:
         return self._payload
 
 
@@ -38,7 +38,7 @@ def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -
 
     class _Dataset:
         @classmethod
-        def from_dict(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        def from_dict(cls: Any, data: Dict[str, Any]) -> Dict[str, Any]:
             return data
 
     setattr(datasets_module, "Dataset", _Dataset)
@@ -64,7 +64,7 @@ def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -
     embeddings_module = ModuleType("ragas.embeddings")
 
     class _HFEmb:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self: Any, model_name: str) -> None:
             self.model_name = model_name
 
     setattr(embeddings_module, "HuggingFaceEmbeddings", _HFEmb)
@@ -74,7 +74,7 @@ def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -
     llms_module = ModuleType("ragas.llms")
 
     class _RagasOpenAI:
-        def __init__(self, client: Any, model: str) -> None:
+        def __init__(self: Any, client: Any, model: str) -> None:
             self.client = client
             self.model = model
 
@@ -85,7 +85,7 @@ def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -
     openai_module = ModuleType("openai")
 
     class _OpenAIClient:
-        def __init__(self, base_url: str, api_key: str) -> None:
+        def __init__(self: Any, base_url: str, api_key: str) -> None:
             self.base_url = base_url
             self.api_key = api_key
 

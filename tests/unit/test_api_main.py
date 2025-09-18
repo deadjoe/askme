@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 Unit tests for FastAPI app wiring in askme.api.main
 """
@@ -9,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def _build_patched_app():
+def _build_patched_app() -> Any:
     # Patch heavy components referenced inside lifespan
     with (
         patch("askme.api.main.BGEEmbeddingService", autospec=True) as _emb,
@@ -47,14 +49,14 @@ def test_create_app_routes() -> None:
     assert any("/eval" in p for p in paths)
 
 
-def test_lifespan_startup_skips_heavy_init(monkeypatch) -> None:
+def test_lifespan_startup_skips_heavy_init(monkeypatch: Any) -> None:
     monkeypatch.setenv("ASKME_SKIP_HEAVY_INIT", "1")
     monkeypatch.setenv("ASKME_ENABLE_OLLAMA", "0")
     app = _build_patched_app()
 
     # Add a simple route to ensure app runs
     @app.get("/ping")
-    async def _ping():  # pragma: no cover - trivial
+    async def _ping() -> Any:  # pragma: no cover - trivial
         return {"ok": True}
 
     with TestClient(app) as client:
@@ -67,11 +69,11 @@ def test_lifespan_startup_skips_heavy_init(monkeypatch) -> None:
         assert client.get("/ping").status_code == 200
 
 
-def test_global_exception_handler(monkeypatch) -> None:
+def test_global_exception_handler(monkeypatch: Any) -> None:
     app = _build_patched_app()
 
     @app.get("/boom")
-    async def boom():  # pragma: no cover - exception path tested
+    async def boom() -> Any:  # pragma: no cover - exception path tested
         raise ValueError("kaboom")
 
     # Avoid server exceptions being re-raised by the test client
