@@ -22,7 +22,7 @@ async def test_encode_query_normalization_default() -> None:
 
     # Patch model and mark initialized
     class _M:
-        def encode(self, *args: Any, **kwargs: Any):  # type: ignore[no-redef]
+        def encode(self, *args: Any, **kwargs: Any):
             return {"dense_vecs": [np.array([3.0, 4.0])], "sparse_vecs": [{}]}
 
     svc.model = _M()

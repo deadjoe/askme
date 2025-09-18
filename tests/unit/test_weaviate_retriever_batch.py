@@ -16,13 +16,13 @@ class _AsyncBatch:
     def __init__(self) -> None:
         self.add_calls = 0
 
-    async def __aenter__(self):  # type: ignore[override]
+    async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # type: ignore[override]
+    async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def add_object(self, **kwargs: Any):  # type: ignore[no-redef]
+    async def add_object(self, **kwargs: Any):
         self.add_calls += 1
         # simulate awaitable return
         return None
@@ -48,7 +48,7 @@ async def test_insert_documents_async_batch_path() -> None:
     async def _ensure() -> Any:
         return col
 
-    r._ensure_collection = _ensure  # type: ignore[assignment]
+    r._ensure_collection = _ensure
 
     docs = [
         Document(id="a", content="x", metadata={}, embedding=[0.1] * 4),

@@ -58,22 +58,22 @@ async def test_run_pipeline_once_basic_single_query_path() -> None:
     import asyncio
 
     class _Emb:
-        async def encode_query(self, q: str) -> Dict[str, Any]:  # type: ignore[override]
+        async def encode_query(self, q: str) -> Dict[str, Any]:
             return {"dense_embedding": [0.1, 0.2], "sparse_embedding": {}}
 
     class _Ret:
-        async def hybrid_search(self, *_args, **_kwargs):  # type: ignore[override]
+        async def hybrid_search(self, *_args, **_kwargs):
             await asyncio.sleep(0)
             return _mk_results(["d1", "d2"])  # single list path
 
     class _RR:
-        async def rerank(self, *_args, **_kwargs):  # type: ignore[override]
+        async def rerank(self, *_args, **_kwargs):
             # Minimal objects with required attributes for the route code
             doc = Document(id="d1", content="content d1", metadata={"title": "d1"})
             return [SimpleNamespace(document=doc, rerank_score=0.9)]
 
     class _Gen:
-        async def generate(self, *_args, **_kwargs):  # type: ignore[override]
+        async def generate(self, *_args, **_kwargs):
             return "final answer"
 
     app.state.embedding_service = _Emb()
@@ -100,25 +100,25 @@ async def test_run_pipeline_once_with_hyde_and_rag_fusion_rrf() -> None:
     import asyncio
 
     class _Emb:
-        async def encode_query(self, q: str) -> Dict[str, Any]:  # type: ignore[override]
+        async def encode_query(self, q: str) -> Dict[str, Any]:
             return {"dense_embedding": [0.1, 0.2], "sparse_embedding": {}}
 
     calls: List[int] = []
 
     class _Ret:
-        async def hybrid_search(self, *_args, **_kwargs):  # type: ignore[override]
+        async def hybrid_search(self, *_args, **_kwargs):
             await asyncio.sleep(0)
             calls.append(1)
             return _mk_results([f"d{len(calls)}"])  # produce different ids
 
     class _RR:
-        async def rerank(self, *_args, **_kwargs):  # type: ignore[override]
+        async def rerank(self, *_args, **_kwargs):
             # Consolidate one reranked result
             doc = Document(id="d1", content="ccc", metadata={})
             return [SimpleNamespace(document=doc, rerank_score=0.8)]
 
     class _Gen:
-        async def generate(self, *_args, **_kwargs):  # type: ignore[override]
+        async def generate(self, *_args, **_kwargs):
             return "answer with rrf"
 
     app.state.embedding_service = _Emb()

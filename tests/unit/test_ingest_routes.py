@@ -84,10 +84,10 @@ async def test_ingest_documents_calls_service(tmp_path) -> None:
     req = _Req()
 
     class _Svc:
-        async def ingest_file(self, **kwargs: Any) -> str:  # type: ignore[override]
+        async def ingest_file(self, **kwargs: Any) -> str:
             return "tid-file"
 
-        async def ingest_directory(self, **kwargs: Any) -> str:  # type: ignore[override]
+        async def ingest_directory(self, **kwargs: Any) -> str:
             return "tid-dir"
 
     req.app.state.ingestion_service = _Svc()
@@ -115,10 +115,10 @@ async def test_ingest_file_and_directory_endpoints_call_service(tmp_path) -> Non
     req = _Req()
 
     class _Svc:
-        async def ingest_file(self, **kwargs: Any) -> str:  # type: ignore[override]
+        async def ingest_file(self, **kwargs: Any) -> str:
             return "fid"
 
-        async def ingest_directory(self, **kwargs: Any) -> str:  # type: ignore[override]
+        async def ingest_directory(self, **kwargs: Any) -> str:
             return "did"
 
     req.app.state.ingestion_service = _Svc()
@@ -145,12 +145,12 @@ async def test_upload_and_ingest_validation(tmp_path) -> None:
     # unsupported extension
     bad = [_Upload("bad.exe")]
     with pytest.raises(HTTPException) as exc:
-        await upload_and_ingest(bad, tags=None, overwrite=False, settings=settings)  # type: ignore[arg-type]
+        await upload_and_ingest(bad, tags=None, overwrite=False, settings=settings)
     assert exc.value.status_code == 400
 
     # supported extensions (derived from settings)
     ok = [_Upload("a.pdf"), _Upload("b.txt")]
-    resp = await upload_and_ingest(ok, tags="t1,t2", overwrite=True, settings=settings)  # type: ignore[arg-type]
+    resp = await upload_and_ingest(ok, tags="t1,t2", overwrite=True, settings=settings)
     assert resp.document_count == 2 and resp.status == "queued"
 
 
@@ -182,10 +182,10 @@ async def test_get_ingestion_status_and_stats() -> None:
                 processed_chunks=4,
             )
 
-        async def get_task_status(self, tid: str) -> Optional[IngestionTask]:  # type: ignore[override]
+        async def get_task_status(self, tid: str) -> Optional[IngestionTask]:
             return self._task if tid == "tid" else None
 
-        async def get_ingestion_stats(self) -> IngestionStats:  # type: ignore[override]
+        async def get_ingestion_stats(self) -> IngestionStats:
             return IngestionStats(
                 total_documents=3,
                 total_chunks=15,
