@@ -26,7 +26,7 @@ class DummyClient:
             "c", (), {"completions": type("cc", (), {"create": self._create})}
         )
 
-    def _create(self, **_: Dict[str, Any]) -> DummyResponse:  # type: ignore[no-redef]
+    def _create(self, **_: Dict[str, Any]) -> DummyResponse:
         return DummyResponse("ok")
 
 
@@ -38,7 +38,7 @@ async def test_openai_generator_uses_base_url(monkeypatch: Any) -> None:
     # Patch OpenAI client constructor to our dummy
     import askme.generation.generator as g
 
-    def _dummy_client(*args: Any, **kwargs: Any) -> DummyClient:  # type: ignore[no-redef]
+    def _dummy_client(*args: Any, **kwargs: Any) -> DummyClient:
         return DummyClient()
 
     monkeypatch.setattr(g, "OpenAI", _dummy_client)

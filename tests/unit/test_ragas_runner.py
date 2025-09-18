@@ -93,7 +93,7 @@ def _install_fake_ragas(monkeypatch: pytest.MonkeyPatch, evaluate_result: Any) -
     monkeypatch.setitem(sys.modules, "openai", openai_module)
 
 
-@pytest.fixture(autouse=True)  # type: ignore[misc]
+@pytest.fixture(autouse=True)
 def _cleanup_modules() -> Generator[None, None, None]:
     originals = sys.modules.copy()
     yield

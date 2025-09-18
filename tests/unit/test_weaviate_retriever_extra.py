@@ -39,16 +39,16 @@ async def test_get_collection_stats_total_count_dict_path() -> None:
     async def _ensure():
         return col
 
-    r._ensure_collection = _ensure  # type: ignore[assignment]
+    r._ensure_collection = _ensure
     out = await r.get_collection_stats()
     assert out["num_entities"] == 123
 
 
 class _SyncBatch:
-    def __enter__(self):  # type: ignore[override]
+    def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):  # type: ignore[override]
+    def __exit__(self, exc_type, exc, tb):
         return False
 
     def add_object(self, **kwargs: Any):  # non-awaitable
@@ -73,7 +73,7 @@ async def test_insert_documents_sync_batch_path() -> None:
     async def _ensure():
         return c
 
-    r._ensure_collection = _ensure  # type: ignore[assignment]
+    r._ensure_collection = _ensure
     ids = await r.insert_documents(
         [
             Document(
@@ -100,7 +100,7 @@ async def test_get_document_fallback_get_by_id() -> None:
     async def _ensure2():
         return col
 
-    r._ensure_collection = _ensure2  # type: ignore[assignment]
+    r._ensure_collection = _ensure2
     doc = await r.get_document("d")
     assert doc and doc.id == "d"
 
@@ -126,11 +126,11 @@ async def test__ensure_collection_creates_when_get_fails() -> None:
     r.client = client
 
     # Patch create_collection to set r.collection
-    async def _create(dim: int):  # type: ignore[no-redef]
+    async def _create(dim: int):
         r.collection = MagicMock()
         return None
 
-    r.create_collection = _create  # type: ignore[assignment]
+    r.create_collection = _create
     col = await r._ensure_collection()
     assert col is not None
 
@@ -151,7 +151,7 @@ async def test_delete_document_multiple_matches() -> None:
     async def _ensure():
         return col
 
-    r._ensure_collection = _ensure  # type: ignore[assignment]
+    r._ensure_collection = _ensure
     ok = await r.delete_document("d")
     assert ok is True
     assert col.data.objects.delete_by_id.call_count == 2

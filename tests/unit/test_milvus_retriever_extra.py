@@ -19,7 +19,11 @@ async def test_sparse_search_with_filters() -> None:
     r.collection = MagicMock()
     # one hit
     hit = MagicMock()
-    hit.entity.get.side_effect = lambda k, d=None: {"id": "i", "content": "c", "metadata": {}}.get(k, d)  # type: ignore
+    hit.entity.get.side_effect = lambda k, d=None: {
+        "id": "i",
+        "content": "c",
+        "metadata": {},
+    }.get(k, d)
     hit.score = 1.2
     r.collection.search.return_value = [[hit]]
     out = await r.sparse_search({1: 0.5}, topk=3, filters={"tag": ["a", "b"]})
@@ -42,7 +46,7 @@ async def test_hybrid_search_rrf_native_error_fallback() -> None:
                     retrieval_method="dense",
                 )
             ]
-        )  # type: ignore
+        )
         r.sparse_search = AsyncMock(
             return_value=[
                 RetrievalResult(
@@ -52,7 +56,7 @@ async def test_hybrid_search_rrf_native_error_fallback() -> None:
                     retrieval_method="sparse",
                 )
             ]
-        )  # type: ignore
+        )
         res = await r.hybrid_search(
             [0.1], {0: 1.0}, HybridSearchParams(use_rrf=True, rrf_k=50, topk=2)
         )
