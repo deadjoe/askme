@@ -76,12 +76,12 @@ class SimpleTemplateGenerator(BaseGenerator):
 
         if lang_is_cn:
             intro = "根据检索到的段落，目前可确认的信息如下："
-            outro = (
-                "若需更精确的答案，可以尝试换用其他关键词或补充更多上下文。"
-            )
+            outro = "若需更精确的答案，可以尝试换用其他关键词或补充更多上下文。"
         else:
-            intro = "From the retrieved passages we can gather:";
-            outro = "Try refining the query or adding detail if you need more specifics."
+            intro = "From the retrieved passages we can gather:"
+            outro = (
+                "Try refining the query or adding detail if you need more specifics."
+            )
 
         body = "\n".join(insight_lines)
 
@@ -89,12 +89,11 @@ class SimpleTemplateGenerator(BaseGenerator):
             body = "-"  # 保底，理论上不会出现因为 passages 非空
 
         if lang_is_cn:
-            conclusion = (
-                "目前的片段未直接列出具体名单，如需确认，可进一步检索相近章节。"
-            )
+            conclusion = "目前的片段未直接列出具体名单，如需确认，可进一步检索相近章节。"
         else:
             conclusion = (
-                "The current snippets do not list explicit names; consider exploring adjacent chapters."
+                "The current snippets do not list explicit names; "
+                "consider exploring adjacent chapters."
             )
 
         return "\n".join([intro, body, conclusion, outro])
@@ -134,8 +133,8 @@ class LocalOllamaGenerator(BaseGenerator):
                 cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL | re.IGNORECASE)
 
             # Remove multiple consecutive newlines and extra whitespace
-            cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
-            cleaned = re.sub(r'^\s+|\s+$', '', cleaned, flags=re.MULTILINE)
+            cleaned = re.sub(r"\n\s*\n", "\n", cleaned)
+            cleaned = re.sub(r"^\s+|\s+$", "", cleaned, flags=re.MULTILINE)
 
             return cleaned.strip()
 
@@ -157,29 +156,32 @@ class LocalOllamaGenerator(BaseGenerator):
                 + "4. 回答控制在2-3句话内"
             )
 
-        async def call_ollama(selected: List[Passage], extra_options: Optional[Dict[str, Any]] = None) -> str:
+        async def call_ollama(
+            selected: List[Passage], extra_options: Optional[Dict[str, Any]] = None
+        ) -> str:
             prompt = build_prompt(selected)
 
             model_name = (self.config.ollama_model or "").strip() or "gpt-oss:20b"
-            payload = {
+            options: Dict[str, Any] = {
+                "temperature": float(self.config.temperature),
+                "top_p": float(self.config.top_p),
+                "num_predict": int(max(self.config.max_tokens, 512)),
+            }
+            payload: Dict[str, Any] = {
                 "model": model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": float(self.config.temperature),
-                    "top_p": float(self.config.top_p),
-                    "num_predict": int(max(self.config.max_tokens, 512)),
-                },
+                "options": options,
             }
 
             import os
 
             if os.getenv("ASKME_OLLAMA_THINKING", "0") not in {"1", "true", "True"}:
-                payload["options"]["thinking"] = {"enabled": False}
-                payload["options"]["enable_thinking"] = False
+                options["thinking"] = {"enabled": False}
+                options["enable_thinking"] = False
 
             if extra_options:
-                payload["options"].update(extra_options)
+                options.update(extra_options)
 
             client = await self._client_get()
             url = f"{self.config.ollama_endpoint.rstrip('/')}/api/generate"
@@ -215,28 +217,32 @@ class LocalOllamaGenerator(BaseGenerator):
                 cleaned = strip_think(answer_str)
 
                 # Remove any remaining XML-like tags
-                cleaned = re.sub(r"</?(?:final|think|thinking)>", "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(
+                    r"</?(?:final|think|thinking)>", "", cleaned, flags=re.IGNORECASE
+                )
 
-                # Light cleanup: remove excessive meta-commentary while preserving content
+                # Remove excessive meta-commentary while preserving content
                 excessive_patterns = [
-                    r"^首先，我需要.*?。\s*",  # Remove "首先，我需要..." starters
-                    r"^让我.*?。\s*",  # Remove "让我..." starters
-                    r"^我需要.*?。\s*",  # Remove "我需要..." starters
+                    # Remove "首先，我需要..." starters
+                    r"^首先，我需要.*?。\s*",
+                    # Remove "让我..." starters
+                    r"^让我.*?。\s*",
+                    # Remove "我需要..." starters
+                    r"^我需要.*?。\s*",
                 ]
                 for pattern in excessive_patterns:
-                    cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+                    cleaned = re.sub(
+                        pattern, "", cleaned, flags=re.IGNORECASE | re.MULTILINE
+                    )
 
                 cleaned = cleaned.strip()
                 if cleaned:
                     return cleaned
 
-                logger.warning(
-                    "Ollama response stripped to empty after cleaning"
-                )
+                logger.warning("Ollama response stripped to empty after cleaning")
 
             logger.warning("Ollama returned empty response: {}", data)
             raise RuntimeError("ollama-empty-response")
-
 
         # primary attempt uses最多 8 段上下文，若失败再尝试仅保留最相关的 3 段
         attempts: List[Dict[str, Any]] = [
@@ -254,9 +260,7 @@ class LocalOllamaGenerator(BaseGenerator):
         last_error: Optional[Exception] = None
         for attempt_index, attempt in enumerate(attempts, start=1):
             try:
-                return await call_ollama(
-                    attempt["passages"], attempt.get("options")
-                )
+                return await call_ollama(attempt["passages"], attempt.get("options"))
             except Exception as exc:
                 from loguru import logger
 
@@ -324,7 +328,7 @@ class OpenAIChatGenerator(BaseGenerator):
             # Note: openai python SDK is sync; run in thread to avoid blocking loop
             import anyio
 
-            def _call() -> str:
+            def _call(_unused: object | None = None) -> str:
                 client = self._get_client()
                 resp = client.chat.completions.create(
                     model=self.config.openai_model,
