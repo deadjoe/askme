@@ -7,14 +7,14 @@ set -euo pipefail
 
 # Default values
 QUESTION=""
-TOPK=30
-ALPHA=0.0
+TOPK=100
+ALPHA=0.5
 USE_RRF=true
 RRF_K=60
 USE_HYDE=false
 USE_RAG_FUSION=false
 RERANKER="bge_local"
-MAX_PASSAGES=5
+MAX_PASSAGES=8
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 OUTPUT_FORMAT="text"
 INCLUDE_DEBUG=false
@@ -206,7 +206,10 @@ format_text_output() {
     # Extract basic info
     local query_id answer timestamp
     query_id=$(echo "$response" | jq -r '.query_id // "N/A"')
-    answer=$(echo "$response" | jq -r '.answer // "No answer generated"')
+    answer=$(echo "$response" | jq -r '.answer // ""')
+    if [[ -z "${answer//[$'\t\r\n ']/}" ]]; then
+        answer="No answer generated"
+    fi
     timestamp=$(echo "$response" | jq -r '.timestamp // "N/A"')
 
     echo "Question: \"$QUESTION\""
@@ -215,7 +218,7 @@ format_text_output() {
     echo
     echo "Answer:"
     echo "======="
-    echo "$answer"
+    printf '%s\n' "$answer"
     echo
 
     # Display citations
@@ -300,7 +303,10 @@ format_markdown_output() {
     # Extract basic info
     local query_id answer timestamp
     query_id=$(echo "$response" | jq -r '.query_id // "N/A"')
-    answer=$(echo "$response" | jq -r '.answer // "No answer generated"')
+    answer=$(echo "$response" | jq -r '.answer // ""')
+    if [[ -z "${answer//[$'\t\r\n ']/}" ]]; then
+        answer="No answer generated"
+    fi
     timestamp=$(echo "$response" | jq -r '.timestamp // "N/A"')
 
     echo "# Question: $QUESTION"
