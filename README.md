@@ -70,13 +70,51 @@ ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
 ./scripts/answer.sh "What is machine learning?"
 
 # Retrieve documents only (for debugging/tuning)
-./scripts/retrieve.sh "hybrid search techniques" --topk=25 --alpha=0.7
+./scripts/retrieve.sh "hybrid search techniques" --topk=100 --alpha=0.7
 
 # Quick end-to-end smoke test (requires curl + jq)
 ./query_test.sh "Who created BM25?"
 
 # Run evaluation
 ./scripts/evaluate.sh --suite=baseline
+```
+
+### Query Script Parameters
+
+The `./scripts/answer.sh` script supports comprehensive parameter tuning for optimal results:
+
+| Parameter | Default | Range/Options | Description | Impact |
+|-----------|---------|---------------|-------------|---------|
+| `--topk=N` | 100 | 1-100 | Number of initial retrieval candidates | Higher = better recall, slower response |
+| `--alpha=X` | 0.5 | 0.0-1.0 | Hybrid search weight (0=sparse, 1=dense) | 0.0=keyword matching, 1.0=semantic similarity |
+| `--rrf` / `--no-rrf` | `--rrf` | boolean | Use RRF vs alpha fusion | RRF=stable ranking, alpha=direct weighting |
+| `--rrf-k=N` | 60 | 1-200 | RRF fusion smoothing parameter | Lower=aggressive reranking, higher=conservative |
+| `--reranker=TYPE` | `bge_local` | `bge_local`, `cohere` | Reranking model selection | Local=private, Cohere=higher quality |
+| `--max-passages=N` | 8 | 1-20 | Final passages for LLM generation | More=richer context, risk of attention dilution |
+| `--hyde` | disabled | boolean | Enable HyDE query expansion | Better for abstract/conceptual queries |
+| `--rag-fusion` | disabled | boolean | Multi-query generation and fusion | Better coverage for complex questions |
+| `--debug` | disabled | boolean | Include retrieval debug information | Shows timing and score details |
+| `--format=FORMAT` | `text` | `text`, `json`, `markdown` | Output format selection | Choose based on consumption needs |
+| `--verbose` | disabled | boolean | Enable verbose logging | Detailed execution information |
+| `--api-url=URL` | `localhost:8080` | URL | Target API base URL | Override for remote deployments |
+
+### Query Examples
+
+```bash
+# Dense semantic search for conceptual queries
+./scripts/answer.sh "Explain machine learning principles" --alpha=0.8 --max-passages=12
+
+# Sparse keyword search for specific terms
+./scripts/answer.sh "BGE-M3 model architecture" --alpha=0.2 --topk=80
+
+# Enhanced query with expansion techniques
+./scripts/answer.sh "How does attention mechanism work?" --hyde --rag-fusion --format=markdown
+
+# Debug mode with detailed retrieval information
+./scripts/answer.sh "Vector database comparison" --debug --verbose --format=json
+
+# High-quality reranking with cloud fallback
+./scripts/answer.sh "Production RAG best practices" --reranker=cohere --max-passages=10
 ```
 
 ## Configuration

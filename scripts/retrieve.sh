@@ -8,7 +8,7 @@ set -euo pipefail
 # Default values
 QUERY=""
 TOPK=30
-ALPHA=0.0
+ALPHA=0.5
 USE_RRF=true
 RRF_K=60
 USE_HYDE=false
