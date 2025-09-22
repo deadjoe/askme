@@ -3,15 +3,15 @@ Query and retrieval endpoints.
 """
 
 import time
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
-from askme.generation.generator import Passage, SimpleTemplateGenerator
 from askme.enhancer.query_enhancer import generate_fusion_queries, generate_hyde_passage
+from askme.generation.generator import Passage, SimpleTemplateGenerator
 from askme.retriever.base import HybridSearchParams, SearchFusion
 
 
@@ -23,7 +23,9 @@ class Citation(BaseModel):
     content: str = Field(..., description="Relevant content snippet")
     start: int = Field(..., description="Start position in document")
     end: int = Field(..., description="End position in document")
-    score: float = Field(..., ge=0, le=1, description="Normalized relevance score (0-1)")
+    score: float = Field(
+        ..., ge=0, le=1, description="Normalized relevance score (0-1)"
+    )
     raw_score: Optional[float] = Field(default=None, description="Raw reranker score")
     metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Document metadata"
@@ -297,7 +299,7 @@ async def query_documents(
                         fallback_error,
                     )
                     raise RuntimeError(
-                        f"{stage} failed: {_e}; fallback failed: {fallback_error}"
+                        f"{stage} failed: {_e} | fallback failed: {fallback_error}"
                     )
 
         debug_info = None
@@ -375,8 +377,10 @@ async def query_documents(
     except Exception as e:
         from loguru import logger
 
-        fallback_error = str(e)
-        logger.warning("Pipeline failed, using fallback response: {}", fallback_error)
+        pipeline_error_msg = str(e)
+        logger.warning(
+            "Pipeline failed, using fallback response: {}", pipeline_error_msg
+        )
 
     # Mock response for now
     mock_citations = [
@@ -414,7 +418,7 @@ async def query_documents(
             embedding_latency_ms=150,
             search_latency_ms=800,
             rerank_latency_ms=300,
-            error=locals().get("fallback_error"),
+            error=locals().get("pipeline_error_msg"),
         )
 
     # 若真实流程失败，仍尽量调用已配置的 generator 生成答案，便于本地快速联调（如 Ollama ）
@@ -518,7 +522,9 @@ async def retrieve_documents(
                     start=0,
                     end=min(200, len(r.document.content)),
                     score=normalized_score,
-                    raw_score=raw_score if raw_score > 1.0 else None,  # Only store if needed
+                    raw_score=raw_score
+                    if raw_score > 1.0
+                    else None,  # Only store if needed
                     metadata=r.document.metadata,
                 )
             )

@@ -10,5 +10,5 @@ exclude =
     build,
     dist
 per-file-ignores =
-    # Ignore unused imports in __init__.py files
-    __init__.py:F401
+    # 测试文件允许长行（例如长断言、URL、示例 payload）
+    tests/*:E501

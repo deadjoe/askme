@@ -1,4 +1,5 @@
 repos:
+  # 基础通用检查
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
@@ -9,30 +10,46 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  - repo: https://github.com/psf/black
-    rev: 23.3.0
-    hooks:
-      - id: black
-        language_version: python3.13
-
+  # 先排序导入，再格式化，避免相互打架
   - repo: https://github.com/pycqa/isort
     rev: 5.12.0
     hooks:
       - id: isort
         args: ["--profile", "black"]
 
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+      - id: black
+        # 使用通用 python3，避免要求安装 3.13
+        language_version: python3
+
   - repo: https://github.com/pycqa/flake8
     rev: 6.0.0
     hooks:
       - id: flake8
-        args: ["--max-line-length=140"]
+        # 读取项目自带的 .flake8 配置，移除这里的行宽覆盖
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.3.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-PyYAML, types-aiofiles]
-        args: [--ignore-missing-imports]
+        additional_dependencies:
+          # typing stubs
+          - types-PyYAML
+          - types-aiofiles
+          # runtime libs needed for import resolution
+          - fastapi>=0.104.0
+          - pydantic>=2.5.0
+          - pydantic-settings>=2.1.0
+          - httpx>=0.25.0
+          - anyio>=3.7.0
+          - loguru>=0.7.2
+          - uvicorn[standard]>=0.24.0
+          - ragas>=0.2.0
+          - langchain-core
+        # 统一读取 mypy.ini，避免与 pyproject 重复和冲突
+        args: ["--config-file", "mypy.ini"]
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.5
@@ -41,3 +58,12 @@ repos:
         args: ["-c", "pyproject.toml"]
         additional_dependencies:
           - pbr
+
+  # 本地 commit-msg 钩子：强制 Conventional Commits
+  - repo: local
+    hooks:
+      - id: conventional-commits
+        name: conventional-commits
+        entry: python3 scripts/commit_msg_lint.py
+        language: system
+        stages: [commit-msg]
