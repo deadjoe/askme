@@ -3,13 +3,14 @@ Query and retrieval endpoints.
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from askme.core.config import Settings, get_settings
+from askme.generation.generator import Passage, SimpleTemplateGenerator
 from askme.enhancer.query_enhancer import generate_fusion_queries, generate_hyde_passage
 from askme.retriever.base import HybridSearchParams, SearchFusion
 
@@ -22,7 +23,8 @@ class Citation(BaseModel):
     content: str = Field(..., description="Relevant content snippet")
     start: int = Field(..., description="Start position in document")
     end: int = Field(..., description="End position in document")
-    score: float = Field(..., ge=0, le=1, description="Relevance score")
+    score: float = Field(..., ge=0, le=1, description="Normalized relevance score (0-1)")
+    raw_score: Optional[float] = Field(default=None, description="Raw reranker score")
     metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Document metadata"
     )
@@ -60,7 +62,7 @@ class QueryRequest(BaseModel):
 
     q: str = Field(..., description="Search query", min_length=1)
     topk: int = Field(
-        default=50,
+        default=100,
         ge=1,
         le=100,
         description="Number of candidates to retrieve",
@@ -104,7 +106,7 @@ class RetrievalRequest(BaseModel):
 
     q: str = Field(..., description="Search query", min_length=1)
     topk: int = Field(
-        default=50,
+        default=100,
         ge=1,
         le=100,
         description="Number of candidates to retrieve",
@@ -134,6 +136,25 @@ class RetrievalResponse(BaseModel):
 
 
 router = APIRouter()
+
+
+def normalize_rerank_score(raw_score: float) -> float:
+    """
+    Normalize BGE reranker scores to [0,1] range using sigmoid with calibration.
+
+    BGE scores are logits typically in [-5, +5] range:
+    - Positive values indicate relevance
+    - Higher values = more relevant
+    - This normalization preserves relative ordering while making scores intuitive
+    """
+    import math
+
+    # Sigmoid normalization with temperature scaling for better distribution
+    # Temperature = 2.0 spreads out the middle range
+    normalized = 1 / (1 + math.exp(-raw_score / 2.0))
+
+    # Ensure bounds
+    return max(0.0, min(1.0, normalized))
 
 
 @router.post("/", response_model=QueryResponse)
@@ -229,6 +250,8 @@ async def query_documents(
         # Build citations
         citations: List[Citation] = []
         for r in reranked:
+            raw_score = float(r.rerank_score)
+            normalized_score = normalize_rerank_score(raw_score)
             citations.append(
                 Citation(
                     doc_id=r.document.id,
@@ -236,14 +259,13 @@ async def query_documents(
                     content=r.document.content[:200],
                     start=0,
                     end=min(200, len(r.document.content)),
-                    score=max(0.0, min(1.0, float(r.rerank_score))),
+                    score=normalized_score,
+                    raw_score=raw_score,
                     metadata=r.document.metadata,
                 )
             )
 
         # 5) Generate answer via configured generator
-        from askme.generation.generator import Passage  # local import to avoid cycles
-
         generator = getattr(app.state, "generator", None)
         passages = [
             Passage(doc_id=c.doc_id, title=c.title, content=c.content, score=c.score)
@@ -261,7 +283,22 @@ async def query_documents(
                 stage = "generation"
                 answer = await generator.generate(req.q, passages)
             except Exception as _e:
-                raise RuntimeError(f"{stage} failed: {_e}")
+                from loguru import logger
+
+                logger.warning(
+                    "Generation failed, using SimpleTemplate fallback: {}", _e
+                )
+                try:
+                    fallback_generator = SimpleTemplateGenerator(settings.generation)
+                    answer = await fallback_generator.generate(req.q, passages)
+                except Exception as fallback_error:
+                    logger.error(
+                        "Fallback SimpleTemplate generator also failed: {}",
+                        fallback_error,
+                    )
+                    raise RuntimeError(
+                        f"{stage} failed: {_e}; fallback failed: {fallback_error}"
+                    )
 
         debug_info = None
         if req.include_debug:
@@ -332,12 +369,14 @@ async def query_documents(
             answer=answer,
             citations=citations,
             query_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             retrieval_debug=debug_info,
         )
     except Exception as e:
-        # Fall through to mock response below; capture error detail for debug
+        from loguru import logger
+
         fallback_error = str(e)
+        logger.warning("Pipeline failed, using fallback response: {}", fallback_error)
 
     # Mock response for now
     mock_citations = [
@@ -384,8 +423,6 @@ async def query_documents(
             app = request.app
             generator = getattr(app.state, "generator", None)
             if generator is not None:
-                from askme.generation.generator import Passage
-
                 passages = [
                     Passage(
                         doc_id=c.doc_id, title=c.title, content=c.content, score=c.score
@@ -407,7 +444,7 @@ async def query_documents(
         answer=answer,
         citations=mock_citations,
         query_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
         retrieval_debug=debug_info,
     )
 
@@ -469,6 +506,10 @@ async def retrieve_documents(
 
         documents: List[Citation] = []
         for r in results[: req.topk]:
+            # For retrieval-only, we normalize retrieval scores (not rerank scores)
+            raw_score = float(r.score)
+            # Retrieval scores are usually already in [0,1] but may exceed slightly
+            normalized_score = max(0.0, min(1.0, raw_score))
             documents.append(
                 Citation(
                     doc_id=r.document.id,
@@ -476,7 +517,8 @@ async def retrieve_documents(
                     content=r.document.content[:200],
                     start=0,
                     end=min(200, len(r.document.content)),
-                    score=max(0.0, min(1.0, float(r.score))),
+                    score=normalized_score,
+                    raw_score=raw_score if raw_score > 1.0 else None,  # Only store if needed
                     metadata=r.document.metadata,
                 )
             )
@@ -544,7 +586,7 @@ async def retrieve_documents(
         return RetrievalResponse(
             documents=documents,
             query_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             retrieval_debug=debug_info,
         )
     except Exception:
@@ -579,7 +621,7 @@ async def retrieve_documents(
     return RetrievalResponse(
         documents=mock_documents,
         query_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
         retrieval_debug=debug_info,
     )
 
