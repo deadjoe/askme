@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
@@ -58,33 +59,45 @@ class SimpleTemplateGenerator(BaseGenerator):
                 "Please provide more context."
             )
 
-        lines: List[str] = [
-            f"Question: {question}",
-            "Answer (constructed from retrieved passages):",
-        ]
+        def is_chinese(text: str) -> bool:
+            return any("\u4e00" <= ch <= "\u9fff" for ch in text)
 
-        # Use top passages to form a concise answer and include citations
-        for p in passages[: self.config.max_tokens // 200 or 1]:
-            preview = p.content.strip().replace("\n", " ")
-            if len(preview) > 300:
-                preview = preview[:300] + "..."
-            lines.append(f"- [{p.doc_id}: {p.title}] {preview}")
+        lang_is_cn = is_chinese(question)
 
-        # Add a one-line summary to improve readability for evaluations
-        try:
-            titles = [p.title for p in passages[:2]]
-            top_titles = ", ".join(titles) or "context"
-            summary = (
-                f"Summary: Based on {top_titles}, "
-                f"the answer is grounded in retrieved context."
+        def compact(text: str, limit: int = 160) -> str:
+            cleaned = " ".join(text.split())
+            return cleaned[:limit] + ("…" if len(cleaned) > limit else "")
+
+        top_passages = passages[: min(3, len(passages))]
+        insight_lines: List[str] = []
+        for p in top_passages:
+            snippet = compact(p.content)
+            insight_lines.append(f"[{p.doc_id}] {snippet}")
+
+        if lang_is_cn:
+            intro = "根据检索到的段落，目前可确认的信息如下："
+            outro = (
+                "若需更精确的答案，可以尝试换用其他关键词或补充更多上下文。"
             )
-            lines.append(summary)
-        except Exception:
-            pass
+        else:
+            intro = "From the retrieved passages we can gather:";
+            outro = "Try refining the query or adding detail if you need more specifics."
 
-        sources = ", ".join([f"[{p.doc_id}: {p.title}]" for p in passages[:5]])
-        lines.append("Sources: " + sources)
-        return "\n".join(lines)
+        body = "\n".join(insight_lines)
+
+        if not body:
+            body = "-"  # 保底，理论上不会出现因为 passages 非空
+
+        if lang_is_cn:
+            conclusion = (
+                "目前的片段未直接列出具体名单，如需确认，可进一步检索相近章节。"
+            )
+        else:
+            conclusion = (
+                "The current snippets do not list explicit names; consider exploring adjacent chapters."
+            )
+
+        return "\n".join([intro, body, conclusion, outro])
 
 
 class LocalOllamaGenerator(BaseGenerator):
@@ -105,42 +118,158 @@ class LocalOllamaGenerator(BaseGenerator):
 
     async def generate(self, question: str, passages: List[Passage]) -> str:
         # Build prompt from system + concatenated passages
-        context_parts = []
-        for p in passages[:8]:
-            context_parts.append(f"[{p.doc_id}: {p.title}]\n{p.content}\n")
-        context = "\n\n".join(context_parts)
+        def strip_think(text: str) -> str:
+            # Remove various thinking patterns used by Qwen and similar models
+            patterns = [
+                r"<think>.*?</think>",  # Standard think tags
+                r"<thinking>.*?</thinking>",  # Alternative thinking tags
+                r"让我.*?思考.*?(?=\n|\s|$)",  # Chinese thinking patterns
+                r"我需要.*?分析.*?(?=\n|\s|$)",  # Analysis patterns
+                r"首先.*?考虑.*?(?=\n|\s|$)",  # First consider patterns
+                r"标签中.*?说明.*?(?=\n|\s|$)",  # Tag explanation patterns
+            ]
 
-        prompt = (
-            self.config.system_prompt
-            + "\n\n"
-            + self.config.user_prompt_template.format(
-                context=context, question=question
+            cleaned = text
+            for pattern in patterns:
+                cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+
+            # Remove multiple consecutive newlines and extra whitespace
+            cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
+            cleaned = re.sub(r'^\s+|\s+$', '', cleaned, flags=re.MULTILINE)
+
+            return cleaned.strip()
+
+        def build_prompt(selected: List[Passage]) -> str:
+            context_parts = []
+            for p in selected:
+                context_parts.append(f"[{p.doc_id}: {p.title}]\n{p.content}\n")
+            context = "\n\n".join(context_parts)
+            return (
+                self.config.system_prompt
+                + "\n\n"
+                + self.config.user_prompt_template.format(
+                    context=context, question=question
+                )
+                + "\n\n请简洁回答，要求：\n"
+                + "1. 基于上下文直接给出答案，避免分析过程\n"
+                + "2. 答案要具体明确，引用相关文档ID\n"
+                + "3. 如果信息不足，说明原因\n"
+                + "4. 回答控制在2-3句话内"
             )
-        )
 
-        # Call Ollama local API (non-streaming)
-        payload = {
-            "model": self.config.ollama_model or "llama3.1:latest",
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": float(self.config.temperature),
-                "top_p": float(self.config.top_p),
-                "num_predict": int(self.config.max_tokens),
-            },
-        }
+        async def call_ollama(selected: List[Passage], extra_options: Optional[Dict[str, Any]] = None) -> str:
+            prompt = build_prompt(selected)
 
-        try:
+            model_name = (self.config.ollama_model or "").strip() or "gpt-oss:20b"
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": float(self.config.temperature),
+                    "top_p": float(self.config.top_p),
+                    "num_predict": int(max(self.config.max_tokens, 512)),
+                },
+            }
+
+            import os
+
+            if os.getenv("ASKME_OLLAMA_THINKING", "0") not in {"1", "true", "True"}:
+                payload["options"]["thinking"] = {"enabled": False}
+                payload["options"]["enable_thinking"] = False
+
+            if extra_options:
+                payload["options"].update(extra_options)
+
             client = await self._client_get()
             url = f"{self.config.ollama_endpoint.rstrip('/')}/api/generate"
+            from loguru import logger
+
+            logger.info(
+                "Ollama payload: {} (passages={})",
+                payload,
+                len(selected),
+            )
             resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return str(data.get("response") or data.get("message") or "")
-        except Exception:
-            # Fall back to simple template if ollama is unavailable
-            st = SimpleTemplateGenerator(self.config)
-            return await st.generate(question, passages)
+            if resp.status_code >= 400:
+                logger.error(
+                    "Ollama request failed: {} {} (model={})",
+                    resp.status_code,
+                    resp.text,
+                    payload.get("model"),
+                )
+                resp.raise_for_status()
+
+            try:
+                data = resp.json()
+            except Exception as json_err:
+                logger.error("Failed to parse Ollama response: {}", json_err)
+                logger.debug("Ollama raw response: {}", resp.text)
+                raise
+
+            answer = data.get("response") or data.get("message")
+            if answer:
+                answer_str = str(answer)
+
+                # Clean up thinking patterns and unwanted content
+                cleaned = strip_think(answer_str)
+
+                # Remove any remaining XML-like tags
+                cleaned = re.sub(r"</?(?:final|think|thinking)>", "", cleaned, flags=re.IGNORECASE)
+
+                # Light cleanup: remove excessive meta-commentary while preserving content
+                excessive_patterns = [
+                    r"^首先，我需要.*?。\s*",  # Remove "首先，我需要..." starters
+                    r"^让我.*?。\s*",  # Remove "让我..." starters
+                    r"^我需要.*?。\s*",  # Remove "我需要..." starters
+                ]
+                for pattern in excessive_patterns:
+                    cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+
+                cleaned = cleaned.strip()
+                if cleaned:
+                    return cleaned
+
+                logger.warning(
+                    "Ollama response stripped to empty after cleaning"
+                )
+
+            logger.warning("Ollama returned empty response: {}", data)
+            raise RuntimeError("ollama-empty-response")
+
+
+        # primary attempt uses最多 8 段上下文，若失败再尝试仅保留最相关的 3 段
+        attempts: List[Dict[str, Any]] = [
+            {"passages": passages[:8], "options": {}},
+        ]
+        if len(passages) > 3:
+            attempts.append({"passages": passages[:3], "options": {}})
+        attempts.append(
+            {
+                "passages": passages[:3] if len(passages) > 3 else passages[:1],
+                "options": {"num_predict": int(max(self.config.max_tokens, 1024))},
+            }
+        )
+
+        last_error: Optional[Exception] = None
+        for attempt_index, attempt in enumerate(attempts, start=1):
+            try:
+                return await call_ollama(
+                    attempt["passages"], attempt.get("options")
+                )
+            except Exception as exc:
+                from loguru import logger
+
+                last_error = exc
+                logger.error(
+                    "Ollama generation attempt %s failed: %s",
+                    attempt_index,
+                    exc,
+                )
+
+        # 如果全部尝试失败，抛出最后一次的异常供上层兜底处理
+        assert last_error is not None
+        raise last_error
 
     async def cleanup(self) -> None:
         if self._client is not None:

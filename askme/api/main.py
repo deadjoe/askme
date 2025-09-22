@@ -91,6 +91,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         generator: BaseGenerator
         enable_ollama = os.getenv("ASKME_ENABLE_OLLAMA", "0") in {"1", "true", "True"}
         if enable_ollama or settings.generation.provider.lower() == "ollama":
+            from loguru import logger
+
+            if not settings.generation.ollama_model:
+                default_model = "gpt-oss:20b"
+                logger.warning(
+                    "ollama_model not configured, defaulting to {}", default_model
+                )
+                settings.generation.ollama_model = default_model
+
+            logger.info(
+                "Initializing Ollama generator with config: {}",
+                settings.generation.model_dump(),
+            )
             generator = LocalOllamaGenerator(settings.generation)
         elif settings.generation.provider.lower() == "openai":
             generator = OpenAIChatGenerator(settings.generation)
