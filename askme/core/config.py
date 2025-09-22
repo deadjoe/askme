@@ -358,11 +358,32 @@ class Settings(BaseSettings):
             config_data = {}
 
         # Override with environment variables manually since passing **kwargs
-        # to __init__ prevents Pydantic from checking environment
-        for key in config_data.keys():
-            env_key = f"ASKME_{key.upper()}"
-            if env_key in os.environ:
-                config_data[key] = os.environ[env_key]
+        # to __init__ prevents Pydantic from checking environment. Support
+        # nested fields using double-underscore notation (e.g.
+        # ASKME_GENERATION__OLLAMA_MODEL).
+        env_prefix = "ASKME_"
+        model_fields = cls.model_fields
+
+        for env_key, env_value in os.environ.items():
+            if not env_key.startswith(env_prefix):
+                continue
+
+            path = env_key[len(env_prefix) :].lower().split("__")
+            if not path:
+                continue
+
+            top_key = path[0]
+            if top_key not in model_fields:
+                continue
+
+            cursor = config_data
+            for part in path[:-1]:
+                if not isinstance(cursor, dict):
+                    break
+                cursor = cursor.setdefault(part, {})
+            else:
+                if isinstance(cursor, dict):
+                    cursor[path[-1]] = env_value
 
         return cls(**config_data)
 
