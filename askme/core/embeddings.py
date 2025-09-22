@@ -5,6 +5,7 @@ BGE-M3 embedding service with sparse and dense vector generation.
 import asyncio
 import importlib
 import logging
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -12,6 +13,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 
 from askme.core.config import EmbeddingConfig
+
+# 抑制 tokenizer 的性能警告
+warnings.filterwarnings(
+    "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
+)
 
 torch_module: ModuleType | None
 try:
