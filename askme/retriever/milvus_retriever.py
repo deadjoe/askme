@@ -2,6 +2,7 @@
 Milvus 2.5+ retriever implementation with hybrid search support.
 """
 
+import inspect
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,12 @@ try:
     HYBRID_SEARCH_AVAILABLE = True
 except ImportError:
     HYBRID_SEARCH_AVAILABLE = False
+
+try:
+    _HYBRID_PARAMS = inspect.signature(Collection.hybrid_search).parameters
+    HYBRID_SEARCH_USES_RERANK = "rerank" in _HYBRID_PARAMS
+except (AttributeError, TypeError, ValueError):
+    HYBRID_SEARCH_USES_RERANK = False
 
 from .base import (
     Document,
@@ -130,11 +137,11 @@ class MilvusRetriever(VectorRetriever):
                 index_name="dense_idx",
             )
 
-            # Sparse vector index with BM25
+            # Sparse vector index for BM25 search; metric is specified at query time
             sparse_index_params = {
                 "index_type": "SPARSE_INVERTED_INDEX",
-                "metric_type": "BM25",
-                "params": {"bm25_k1": 1.2, "bm25_b": 0.75},
+                "metric_type": "IP",
+                "params": {},
             }
             collection.create_index(
                 field_name="sparse_vector",
@@ -259,7 +266,7 @@ class MilvusRetriever(VectorRetriever):
             raise RuntimeError("Collection not initialized")
 
         try:
-            search_params = {"metric_type": "BM25", "params": {}}
+            search_params = {"metric_type": "IP", "params": {}}
 
             # Build filter expression if provided
             expr = self._build_filter_expression(filters) if filters else None
@@ -357,7 +364,7 @@ class MilvusRetriever(VectorRetriever):
                 sparse_request = AnnSearchRequest(
                     data=[query_terms],
                     anns_field="sparse_vector",
-                    param={"metric_type": "BM25", "params": {}},
+                    param={"metric_type": "IP", "params": {}},
                     limit=params.topk,
                     expr=expr,
                 )
@@ -366,12 +373,18 @@ class MilvusRetriever(VectorRetriever):
                 ranker = RRFRanker(k=params.rrf_k)
 
                 assert self.collection is not None
-                results = self.collection.hybrid_search(
-                    reqs=[dense_request, sparse_request],
-                    ranker=ranker,
-                    limit=params.topk,
-                    output_fields=["id", "content", "metadata"],
-                )
+                hybrid_kwargs = {
+                    "reqs": [dense_request, sparse_request],
+                    "limit": params.topk,
+                    "output_fields": ["id", "content", "metadata"],
+                }
+
+                if HYBRID_SEARCH_USES_RERANK:
+                    hybrid_kwargs["rerank"] = ranker
+                else:
+                    hybrid_kwargs["ranker"] = ranker
+
+                results = self.collection.hybrid_search(**hybrid_kwargs)
 
                 retrieval_results = []
                 for rank, hit in enumerate(results[0]):
