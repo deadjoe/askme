@@ -46,7 +46,7 @@ embedding:
   # BGE-M3 specific settings
   use_fp16: true
   pooling_method: "cls"
-  query_instruction: ""
+  query_instruction: "为这个句子生成表示以用于检索相关文章："
   passage_instruction: ""
 
 # Reranking Configuration
@@ -115,7 +115,7 @@ generation:
   provider: "ollama"   # simple | ollama | openai
   # Default model settings
   model_name: "gpt-4"
-  max_tokens: 512
+  max_tokens: 2048
   temperature: 0.1
   top_p: 0.9
   # Ollama local
@@ -129,17 +129,21 @@ generation:
 
   # Prompt templates
   system_prompt: |
-    You are a helpful assistant that answers questions based on the provided context.
+    You are a helpful assistant that answers questions based on the provided context. Please respond in the same language as the question.
+    你是一个基于提供上下文回答问题的助手，请使用与问题相同的语言回答。
     Always cite your sources using the provided document references.
-    If you cannot find relevant information in the context, say so clearly.
+    请总是引用你的信息来源。
+    If you cannot find relevant information in the context, say so clearly。
+    如果在上下文中找不到相关信息，请明确说明。
 
   user_prompt_template: |
-    Context:
+    Context/上下文:
     {context}
 
-    Question: {question}
+    Question/问题: {question}
 
     Please provide a detailed answer based on the context above. Include citations in the format [Doc ID: title].
+    请基于以上上下文提供详细回答，并包含[文档ID: 标题]格式的引用。
 
 # Evaluation Configuration
 evaluation:

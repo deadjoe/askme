@@ -22,9 +22,9 @@ class TestSimpleTemplateGenerator:
         ]
 
         out = await gen.generate("What is RAG?", passages)
-        assert "Question: What is RAG?" in out
-        assert "[doc1: Title 1]" in out
-        assert "Sources:" in out
+        assert "From the retrieved passages we can gather" in out
+        assert "[doc1]" in out and "[doc2]" in out
+        assert "do not list explicit names" in out
 
     @pytest.mark.asyncio
     async def test_generate_without_passages(self: Any) -> None:
