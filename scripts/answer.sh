@@ -218,7 +218,8 @@ format_text_output() {
     echo
     echo "Answer:"
     echo "======="
-    printf '%s\n' "$answer"
+    # Improve formatting by ensuring proper paragraph separation
+    echo "$answer" | sed 's/## /\n## /g' | sed 's/^$/\n/g'
     echo
 
     # Display citations

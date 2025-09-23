@@ -131,9 +131,9 @@ generation:
   system_prompt: |
     You are a helpful assistant that answers questions based on the provided context. Please respond in the same language as the question.
     你是一个基于提供上下文回答问题的助手，请使用与问题相同的语言回答。
-    Always cite your sources using the provided document references.
-    请总是引用你的信息来源。
-    If you cannot find relevant information in the context, say so clearly。
+    Provide clean answers without inline citations - sources will be provided separately.
+    提供干净的答案，不要包含内联引用 - 来源信息会单独提供。
+    If you cannot find relevant information in the context, say so clearly.
     如果在上下文中找不到相关信息，请明确说明。
 
   user_prompt_template: |
@@ -142,8 +142,8 @@ generation:
 
     Question/问题: {question}
 
-    Please provide a detailed answer based on the context above. Include citations in the format [Doc ID: title].
-    请基于以上上下文提供详细回答，并包含[文档ID: 标题]格式的引用。
+    Please provide a detailed answer based on the context above. Do not include citations in the answer text itself.
+    请基于以上上下文提供详细回答，答案文本中不要包含引用信息。
 
 # Evaluation Configuration
 evaluation:
