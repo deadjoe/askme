@@ -112,7 +112,8 @@ impl IngestTab {
         }
     }
 
-    /// Update task status
+    /// Update task status (used in tests)
+    #[cfg(test)]
     pub fn update_task_status(&mut self, status: TaskStatus) {
         // Update current task
         self.current_task = Some(status.clone());
@@ -153,6 +154,18 @@ impl IngestTab {
 
     /// Handle keyboard input
     pub fn handle_input(&mut self, key: ratatui::crossterm::event::KeyEvent) -> bool {
+        // Global Up/Down to move focus like Query tab
+        match key.code {
+            ratatui::crossterm::event::KeyCode::Up => {
+                self.previous_field();
+                return true;
+            }
+            ratatui::crossterm::event::KeyCode::Down => {
+                self.next_field();
+                return true;
+            }
+            _ => {}
+        }
         match self.focused_field {
             IngestField::Path => {
                 match key.code {
@@ -276,22 +289,32 @@ impl IngestTab {
             ])
             .split(area);
 
-        // Path input
+        // Path input with dynamic border + placeholder color (same as Query.Question)
         let path_focused = self.focused_field == IngestField::Path;
+        let mut path_block = Block::default().title("Source Path/URL").borders(Borders::ALL);
         if path_focused {
+            path_block = path_block.border_style(Style::default().fg(Color::Yellow));
             self.path_input.set_style(Style::default().fg(Color::Yellow));
+            self.path_input.set_placeholder_style(Style::default().fg(Color::Yellow));
         } else {
             self.path_input.set_style(Style::default());
+            self.path_input.set_placeholder_style(Style::default().fg(Color::Cyan));
         }
+        self.path_input.set_block(path_block);
         frame.render_widget(&self.path_input, form_layout[0]);
 
-        // Tags input
+        // Tags input with dynamic border + placeholder color
         let tags_focused = self.focused_field == IngestField::Tags;
+        let mut tags_block = Block::default().title("Tags (comma-separated)").borders(Borders::ALL);
         if tags_focused {
+            tags_block = tags_block.border_style(Style::default().fg(Color::Yellow));
             self.tags_input.set_style(Style::default().fg(Color::Yellow));
+            self.tags_input.set_placeholder_style(Style::default().fg(Color::Yellow));
         } else {
             self.tags_input.set_style(Style::default());
+            self.tags_input.set_placeholder_style(Style::default().fg(Color::Cyan));
         }
+        self.tags_input.set_block(tags_block);
         frame.render_widget(&self.tags_input, form_layout[1]);
 
         // Options

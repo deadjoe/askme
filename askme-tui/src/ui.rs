@@ -37,8 +37,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         render_error_popup(app, frame, size);
     }
 
-    // Render processing overlay while query is running
-    if app.query_tab.processing {
+    // Render processing overlay while query or ingest is running
+    if app.query_tab.processing || app.ingest_tab.processing {
         render_processing_popup(app, frame, size);
     }
 }

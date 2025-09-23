@@ -196,6 +196,7 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
             // Check background query completion to update UI and dismiss modal
             // Advance spinner animation
             app.throbber.calc_next();
+            // Query task
             if let Some(handle) = &mut app.query_task {
                 if handle.is_finished() {
                     match handle.await {
@@ -216,6 +217,31 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
                         }
                     }
                     app.query_task = None;
+                }
+            }
+            // Ingest task
+            if let Some(handle) = &mut app.ingest_task {
+                if handle.is_finished() {
+                    match handle.await {
+                        Ok(Ok(status)) => {
+                            if status.status == "completed" {
+                                app.set_status("Ingestion completed successfully");
+                            } else {
+                                let msg = status.error_message.unwrap_or_else(|| status.status);
+                                app.set_error(&format!("Ingestion failed: {}", msg));
+                            }
+                            app.ingest_tab.processing = false;
+                        }
+                        Ok(Err(e)) => {
+                            app.ingest_tab.processing = false;
+                            app.set_error(&format!("Ingestion failed: {}", e));
+                        }
+                        Err(e) => {
+                            app.ingest_tab.processing = false;
+                            app.set_error(&format!("Ingestion task error: {}", e));
+                        }
+                    }
+                    app.ingest_task = None;
                 }
             }
         }
@@ -264,16 +290,15 @@ async fn handle_ingest_submission(app: &mut App) -> Result<()> {
     debug!("Submitting ingest request: {}", path);
     app.ingest_tab.start_processing();
 
-    match app.process_ingest().await {
-        Ok(()) => {
-            info!("Ingestion completed successfully");
-        }
-        Err(e) => {
-            warn!("Ingestion failed: {}", e);
-            app.ingest_tab.processing = false;
-            // Error is already set in app.process_ingest()
-        }
-    }
+    // Spawn background ingest: submit + poll until completion
+    let request = app.ingest_tab.get_ingest_request();
+    let api = app.api_client.clone();
+    app.ingest_task = Some(tokio::spawn(async move {
+        let resp = api.ingest(request).await?;
+        let task_id = resp.task_id;
+        let status = api.poll_task_status(&task_id, |_| {}).await?;
+        Ok::<_, anyhow::Error>(status)
+    }));
 
     Ok(())
 }
