@@ -141,15 +141,10 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
                 return Box::pin(handle_event(app, global_event)).await;
             }
 
-            // Handle tab switching (disabled while editing a field in Query tab)
-            let editing_query_field = matches!(app.current_tab, Tab::Query) && app.query_tab.editing_field.is_some();
-            if !editing_query_field {
-                if let Some(tab_num) = key_utils::is_number(key_event) {
-                    if tab_num >= 1 && tab_num <= 4 {
-                        app.set_tab((tab_num - 1) as usize);
-                        return Ok(true);
-                    }
-                }
+            // Handle tab switching with function keys F1-F4 (works everywhere without conflicts)
+            if let Some(tab_num) = key_utils::is_function_key_tab(key_event) {
+                app.set_tab((tab_num - 1) as usize);
+                return Ok(true);
             }
 
             // Note: Left/Right arrows are reserved for in-tab editing now
@@ -224,10 +219,14 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
                 if handle.is_finished() {
                     match handle.await {
                         Ok(Ok(status)) => {
+                            // Update the ingest tab with the final status
+                            app.ingest_tab.update_task_status(status.clone());
+
                             if status.status == "completed" {
-                                app.set_status("Ingestion completed successfully");
+                                let docs_count = status.documents_processed.unwrap_or(0);
+                                app.set_status(&format!("Ingestion completed: {} documents processed", docs_count));
                             } else {
-                                let msg = status.error_message.unwrap_or_else(|| status.status);
+                                let msg = status.error_message.unwrap_or_else(|| status.status.clone());
                                 app.set_error(&format!("Ingestion failed: {}", msg));
                             }
                             app.ingest_tab.processing = false;
@@ -288,15 +287,52 @@ async fn handle_ingest_submission(app: &mut App) -> Result<()> {
     }
 
     debug!("Submitting ingest request: {}", path);
-    app.ingest_tab.start_processing();
+
+    // Create an initial dummy task status to show immediately
+    let dummy_task_id = format!("pending-{}", chrono::Utc::now().timestamp());
+    let initial_dummy_status = crate::api::types::TaskStatus {
+        task_id: dummy_task_id,
+        status: "submitting".to_string(),
+        progress: Some(0.0),
+        documents_processed: Some(0),
+        total_documents: None,
+        error_message: None,
+        started_at: Some(chrono::Utc::now()),
+        completed_at: None,
+    };
+
+    // Set the dummy status immediately so UI updates
+    app.ingest_tab.update_task_status(initial_dummy_status);
+
+    // Start processing (but don't clear current_task since we just set it)
+    app.ingest_tab.processing = true;
 
     // Spawn background ingest: submit + poll until completion
     let request = app.ingest_tab.get_ingest_request();
     let api = app.api_client.clone();
+
     app.ingest_task = Some(tokio::spawn(async move {
         let resp = api.ingest(request).await?;
-        let task_id = resp.task_id;
-        let status = api.poll_task_status(&task_id, |_| {}).await?;
+
+        // Convert IngestResponse to TaskStatus for consistency
+        let initial_status = crate::api::types::TaskStatus {
+            task_id: resp.task_id.clone(),
+            status: resp.status,
+            progress: resp.progress,
+            documents_processed: resp.documents_processed.or(resp.document_count),
+            total_documents: resp.total_documents.or(resp.document_count),
+            error_message: resp.error_message.or(resp.message),
+            started_at: resp.started_at,
+            completed_at: resp.completed_at,
+        };
+
+        // If already completed/failed, return immediately
+        if matches!(initial_status.status.as_str(), "completed" | "failed") {
+            return Ok::<_, anyhow::Error>(initial_status);
+        }
+
+        // Otherwise poll until completion
+        let status = api.poll_task_status(&resp.task_id, |_| {}).await?;
         Ok::<_, anyhow::Error>(status)
     }));
 

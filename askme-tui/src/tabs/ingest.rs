@@ -112,8 +112,7 @@ impl IngestTab {
         }
     }
 
-    /// Update task status (used in tests)
-    #[cfg(test)]
+    /// Update task status
     pub fn update_task_status(&mut self, status: TaskStatus) {
         // Update current task
         self.current_task = Some(status.clone());
@@ -382,8 +381,8 @@ impl IngestTab {
         let status_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),  // Current task
-                Constraint::Min(5),     // Task history
+                Constraint::Percentage(75), // Current task (75% of right panel)
+                Constraint::Percentage(25), // Task history (25% of right panel)
             ])
             .split(area);
 
@@ -400,21 +399,72 @@ impl IngestTab {
             let task_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(2),  // Basic info
-                    Constraint::Length(2),  // Progress
-                    Constraint::Min(2),     // Details
+                    Constraint::Percentage(25), // Basic info
+                    Constraint::Percentage(20), // Progress
+                    Constraint::Percentage(20), // Performance metrics
+                    Constraint::Percentage(35), // Details
                 ])
                 .split(area);
 
-            // Basic info
+            // Basic info with enhanced details
+            let source_path = self.path_input.lines().join("");
+            let source_display = if source_path.len() > 35 {
+                format!("...{}", &source_path[source_path.len().saturating_sub(32)..])
+            } else {
+                source_path.clone()
+            };
+
+            let source_icon = match self.source_type {
+                Some(crate::api::SourceType::File) => "📄",
+                Some(crate::api::SourceType::Directory) => "📁",
+                Some(crate::api::SourceType::Url) => "🌐",
+                None => "📝",
+            };
+
+            let status_icon = match task.status.as_str() {
+                "submitting" => "📤",
+                "queued" => "⏳",
+                "processing" => "⚙️",
+                "completed" => "✅",
+                "failed" => "❌",
+                _ => "❓",
+            };
+
             let basic_info = format!(
-                "Task ID: {}\nStatus: {}",
+                "{} {}: {}\n🆔 Task: {} | {} {}",
+                source_icon,
+                self.source_type.as_ref().map(|s| s.as_str()).unwrap_or("Unknown").to_uppercase(),
+                source_display,
                 &task.task_id[..8],
-                task.status
+                status_icon,
+                task.status.to_uppercase()
             );
 
+            let basic_style = match task.status.as_str() {
+                "submitting" => Style::default().fg(Color::Yellow),
+                "processing" => Style::default().fg(Color::Cyan),
+                "completed" => Style::default().fg(Color::Green),
+                "failed" => Style::default().fg(Color::Red),
+                "queued" => Style::default().fg(Color::Yellow),
+                _ => Style::default(),
+            };
+
+            let title_style = match task.status.as_str() {
+                "submitting" => Style::default().fg(Color::Yellow),
+                "processing" => Style::default().fg(Color::Cyan),
+                "completed" => Style::default().fg(Color::Green),
+                "failed" => Style::default().fg(Color::Red),
+                "queued" => Style::default().fg(Color::Yellow),
+                _ => Style::default(),
+            };
+
             let basic_widget = Paragraph::new(basic_info)
-                .block(Block::default().borders(Borders::ALL).title("Current Task"));
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title("📋 Current Task")
+                    .title_style(title_style)
+                    .border_style(title_style))
+                .style(basic_style);
 
             frame.render_widget(basic_widget, task_layout[0]);
 
@@ -435,48 +485,208 @@ impl IngestTab {
                 };
 
                 let gauge = Gauge::default()
-                    .block(Block::default().borders(Borders::ALL).title("Progress"))
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("📊 Progress")
+                        .title_style(Style::default().fg(gauge_color))
+                        .border_style(Style::default().fg(gauge_color)))
                     .gauge_style(Style::default().fg(gauge_color))
                     .percent(progress_percent)
                     .label(label);
 
                 frame.render_widget(gauge, task_layout[1]);
             } else {
-                let placeholder = Paragraph::new("No progress data")
-                    .block(Block::default().borders(Borders::ALL).title("Progress"));
+                let placeholder = Paragraph::new("📊 No progress data available")
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("📊 Progress")
+                        .title_style(Style::default().fg(Color::Gray))
+                        .border_style(Style::default().fg(Color::Gray)))
+                    .style(Style::default().fg(Color::Gray));
                 frame.render_widget(placeholder, task_layout[1]);
             }
 
-            // Details
-            let details_text = vec![
-                format!("Documents processed: {}", task.documents_processed.unwrap_or(0)),
-                if let Some(ref error) = task.error_message {
-                    format!("Error: {}", error)
+            // Performance metrics
+            let performance_info = if task.status == "submitting" {
+                "📤 Submitting request to server... | ⏳ Initializing task".to_string()
+            } else if task.status == "processing" {
+                let elapsed_time = if let Some(started) = task.started_at {
+                    let now = chrono::Utc::now();
+                    let duration = now.signed_duration_since(started);
+                    let minutes = duration.num_minutes();
+                    let seconds = duration.num_seconds() % 60;
+                    format!("⏱️ Elapsed: {}:{:02}", minutes, seconds)
                 } else {
-                    "No errors".to_string()
-                },
-                if let Some(ref started) = task.started_at {
-                    format!("Started: {}", started.format("%H:%M:%S"))
-                } else {
-                    "Start time: Unknown".to_string()
-                },
-            ];
+                    "⏱️ Elapsed: Unknown".to_string()
+                };
 
-            let details_widget = Paragraph::new(details_text.join("\n"))
-                .block(Block::default().borders(Borders::ALL).title("Details"))
+                let eta_info = if let (Some(progress), Some(started)) = (task.progress, task.started_at) {
+                    if progress > 0.0 {
+                        let elapsed = chrono::Utc::now().signed_duration_since(started);
+                        let total_estimated = elapsed.num_seconds() as f64 / progress;
+                        let remaining = total_estimated - elapsed.num_seconds() as f64;
+
+                        if remaining > 0.0 {
+                            let eta_minutes = (remaining / 60.0) as i64;
+                            let eta_seconds = (remaining % 60.0) as i64;
+                            format!("⏳ ETA: {}:{:02}", eta_minutes, eta_seconds)
+                        } else {
+                            "⏳ ETA: Almost done".to_string()
+                        }
+                    } else {
+                        "⏳ ETA: Calculating...".to_string()
+                    }
+                } else {
+                    "⏳ ETA: Unknown".to_string()
+                };
+
+                format!("{} | {}", elapsed_time, eta_info)
+            } else if task.status == "queued" {
+                "📅 Queued | ⏳ Waiting for processing resources...".to_string()
+            } else {
+                let duration_info = if let (Some(started), Some(completed)) = (task.started_at, task.completed_at) {
+                    let duration = completed.signed_duration_since(started);
+                    let minutes = duration.num_minutes();
+                    let seconds = duration.num_seconds() % 60;
+                    format!("⏱️ Duration: {}:{:02}", minutes, seconds)
+                } else {
+                    "⏱️ Duration: Unknown".to_string()
+                };
+                duration_info
+            };
+
+            let performance_style = match task.status.as_str() {
+                "submitting" => Style::default().fg(Color::Yellow),
+                "processing" => Style::default().fg(Color::Cyan),
+                "completed" => Style::default().fg(Color::Green),
+                "failed" => Style::default().fg(Color::Red),
+                _ => Style::default().fg(Color::Yellow),
+            };
+
+            let performance_title = match task.status.as_str() {
+                "submitting" => "📤 Submitting",
+                "processing" => "⚡ Performance",
+                "completed" => "🏁 Completed",
+                "failed" => "💥 Failed",
+                _ => "📈 Performance",
+            };
+
+            let performance_widget = Paragraph::new(performance_info)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title(performance_title)
+                    .title_style(performance_style)
+                    .border_style(performance_style))
+                .style(performance_style)
                 .wrap(Wrap { trim: true });
 
-            frame.render_widget(details_widget, task_layout[2]);
+            frame.render_widget(performance_widget, task_layout[2]);
+
+            // Details
+            let progress_info = if let (Some(processed), Some(total)) = (task.documents_processed, task.total_documents) {
+                format!("Documents: {}/{}", processed, total)
+            } else if let Some(processed) = task.documents_processed {
+                format!("Documents processed: {}", processed)
+            } else {
+                "Documents: Unknown".to_string()
+            };
+
+            let stage_info = match task.status.as_str() {
+                "queued" => "📋 Stage: Queued for processing",
+                "processing" => {
+                    if let Some(progress) = task.progress {
+                        if progress < 0.25 {
+                            "📖 Stage: Reading and parsing documents"
+                        } else if progress < 0.5 {
+                            "✂️  Stage: Chunking documents"
+                        } else if progress < 0.75 {
+                            "🧠 Stage: Generating embeddings"
+                        } else {
+                            "💾 Stage: Storing in vector database"
+                        }
+                    } else {
+                        "⚙️ Stage: Processing documents"
+                    }
+                },
+                "completed" => "🎉 Stage: Completed successfully",
+                "failed" => "💥 Stage: Failed",
+                _ => "❓ Stage: Unknown",
+            };
+
+            let mut details_text = vec![
+                progress_info,
+                stage_info.to_string(),
+            ];
+
+            // Add error information if present
+            if let Some(ref error) = task.error_message {
+                details_text.push(format!("❌ Error: {}", error));
+            } else if task.status != "failed" {
+                details_text.push("✅ Status: No errors".to_string());
+            }
+
+            // Add timing information
+            if let Some(ref started) = task.started_at {
+                details_text.push(format!("🕐 Started: {}", started.format("%H:%M:%S")));
+            }
+
+            if let Some(ref completed) = task.completed_at {
+                details_text.push(format!("🏁 Completed: {}", completed.format("%H:%M:%S")));
+            };
+
+            let details_style = match task.status.as_str() {
+                "processing" => Style::default().fg(Color::White),
+                "completed" => Style::default().fg(Color::Green),
+                "failed" => Style::default().fg(Color::Red),
+                "queued" => Style::default().fg(Color::Yellow),
+                _ => Style::default(),
+            };
+
+            let details_widget = Paragraph::new(details_text.join("\n"))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title("📋 Details")
+                    .title_style(details_style)
+                    .border_style(details_style))
+                .style(details_style)
+                .wrap(Wrap { trim: true });
+
+            frame.render_widget(details_widget, task_layout[3]);
         } else if self.processing {
-            let processing_widget = Paragraph::new("Submitting ingestion request...\n\nPlease wait...")
-                .block(Block::default().borders(Borders::ALL).title("Current Task"))
+            let source_path = self.path_input.lines().join("");
+            let source_display = if source_path.len() > 40 {
+                format!("...{}", &source_path[source_path.len().saturating_sub(37)..])
+            } else {
+                source_path.clone()
+            };
+
+            let source_icon = match self.source_type {
+                Some(crate::api::SourceType::File) => "📄",
+                Some(crate::api::SourceType::Directory) => "📁",
+                Some(crate::api::SourceType::Url) => "🌐",
+                None => "📝",
+            };
+
+            let processing_info = format!(
+                "⏳ Submitting ingestion request...\n\n{} Processing: {}\n📝 Type: {}\n\n🔄 Please wait while the task is being queued...",
+                source_icon,
+                source_display,
+                self.source_type.as_ref().map(|s| s.as_str()).unwrap_or("Unknown")
+            );
+
+            let processing_widget = Paragraph::new(processing_info)
+                .block(Block::default().borders(Borders::ALL).title("⚙️ Current Task"))
                 .style(Style::default().fg(Color::Yellow))
                 .wrap(Wrap { trim: true });
 
             frame.render_widget(processing_widget, area);
         } else {
-            let placeholder_widget = Paragraph::new("No active ingestion task.\n\nFill out the form and submit to start.")
-                .block(Block::default().borders(Borders::ALL).title("Current Task"))
+            let placeholder_info = format!(
+                "💤 No active ingestion task\n\n📝 Fill out the form on the left:\n   • Enter source path or URL\n   • Add optional tags\n   • Configure options\n\n🚀 Press Enter on 'Submit' to start ingestion\n\n💡 Tip: Use Tab to navigate between fields"
+            );
+
+            let placeholder_widget = Paragraph::new(placeholder_info)
+                .block(Block::default().borders(Borders::ALL).title("📋 Current Task"))
                 .style(Style::default().fg(Color::Gray))
                 .wrap(Wrap { trim: true });
 
@@ -591,6 +801,7 @@ mod tests {
             status: "processing".to_string(),
             progress: Some(50.0),
             documents_processed: Some(10),
+            total_documents: Some(20),
             error_message: None,
             started_at: Some(Utc::now()),
             completed_at: None,

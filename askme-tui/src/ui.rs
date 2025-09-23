@@ -85,7 +85,7 @@ fn render_help_tab(frame: &mut Frame, area: Rect) {
         "",
         "GLOBAL CONTROLS:",
         "  Ctrl+C, Ctrl+Q, ESC  Quit application",
-        "  1, 2, 3, 4           Switch to tabs (Query, Ingest, Settings, Help)",
+        "  F1, F2, F3, F4       Switch to tabs (Query, Ingest, Settings, Help)",
         // F1 toggle removed
         "",
         "QUERY TAB:",
@@ -160,7 +160,7 @@ fn render_footer(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(status_widget, footer_layout[0]);
 
     // Shortcuts
-    let shortcuts = vec!["Ctrl+Q: Quit", "1-4: Tabs"];
+    let shortcuts = vec!["Ctrl+Q: Quit", "F1-F4: Tabs"];
 
     let shortcuts_widget = Paragraph::new(shortcuts.join(" | "))
         .block(Block::default().borders(Borders::ALL).title("Shortcuts"))
