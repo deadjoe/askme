@@ -135,6 +135,14 @@ class LocalOllamaGenerator(BaseGenerator):
                 r"我需要.*?分析.*?(?=\n|\s|$)",  # Analysis patterns
                 r"首先.*?考虑.*?(?=\n|\s|$)",  # First consider patterns
                 r"标签中.*?说明.*?(?=\n|\s|$)",  # Tag explanation patterns
+                r"首先，.*?(?=\n\n|\n[^我让但])",  # Starting with 首先，
+                r"让我.*?(?=\n\n|\n[^我让但])",  # Starting with 让我
+                r"我的回答应该是.*?(?=\n\n|\n[^我让但])",  # My answer should be
+                r"但根据要求.*?(?=\n\n|\n[^我让但])",  # But according to requirements
+                r"所以，我.*?(?=\n\n|\n[^我让但])",  # So, I...
+                r"因此，我.*?(?=\n\n|\n[^我让但])",  # Therefore, I...
+                r"我再检查.*?(?=\n\n|\n[^我让但])",  # Let me check again
+                r"我决定.*?(?=\n\n|\n[^我让但])",  # I decide
             ]
 
             cleaned = text
@@ -158,11 +166,13 @@ class LocalOllamaGenerator(BaseGenerator):
                 + self.config.user_prompt_template.format(
                     context=context, question=question
                 )
-                + "\n\n请简洁回答，要求：\n"
-                + "1. 基于上下文直接给出答案，避免分析过程\n"
-                + "2. 答案要具体明确，引用相关文档ID\n"
-                + "3. 如果信息不足，说明原因\n"
-                + "4. 回答控制在2-3句话内"
+                + "\n\n请详细回答，要求：\n"
+                + "1. 基于上下文提供完整、详细的答案\n"
+                + "2. 整合多个相关段落的信息，给出全面回答\n"
+                + "3. 答案中不要包含文档ID引用，纯文本回答即可\n"
+                + "4. 如果信息不足，说明原因\n"
+                + "5. 答案要有逻辑层次，便于阅读理解\n"
+                + "6. 回答内容要有清晰的段落分隔"
             )
 
         async def call_ollama(

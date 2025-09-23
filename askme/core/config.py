@@ -178,7 +178,7 @@ class GenerationConfig(BaseSettings):
     openai_api_key_env: str = "OPENAI_API_KEY"  # env var name to read
 
     system_prompt: str = """You are a helpful assistant that answers questions based on the provided context.  # noqa: E501
-Always cite your sources using the provided document references.
+Provide clean answers without inline citations - sources will be provided separately.
 If you cannot find relevant information in the context, say so clearly."""
 
     user_prompt_template: str = """Context:  # noqa: E501
@@ -186,7 +186,7 @@ If you cannot find relevant information in the context, say so clearly."""
 
 Question: {question}
 
-Please provide a detailed answer based on the context above. Include citations in the format [Doc ID: title]."""
+Please provide a detailed answer based on the context above. Do not include citations in the answer text itself."""
 
 
 class EvaluationConfig(BaseSettings):
