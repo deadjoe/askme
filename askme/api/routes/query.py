@@ -367,8 +367,27 @@ async def query_documents(
                 overlap_hits=overlap_hits or None,
             )
 
+        # Final sanitize to ensure no inline doc-id markers leak into answer text
+        import re as _re
+
+        def _sanitize(txt: str) -> str:
+            t = _re.sub(r"\[[^\]]*#chunk[^\]]*\]", "", txt, flags=_re.IGNORECASE)
+            t = _re.sub(
+                r"\[(?:chunk|doc(?:ument)?|passage|source|ref|citation)[^\]]*\]",
+                "",
+                t,
+                flags=_re.IGNORECASE,
+            )
+            t = _re.sub(
+                r"^\s*(?:sources?|参考来源)[:：].*$",
+                "",
+                t,
+                flags=_re.IGNORECASE | _re.MULTILINE,
+            )
+            return _re.sub(r"\s{2,}", " ", t).strip()
+
         return QueryResponse(
-            answer=answer,
+            answer=_sanitize(answer),
             citations=citations,
             query_id=str(uuid.uuid4()),
             timestamp=datetime.now(UTC),

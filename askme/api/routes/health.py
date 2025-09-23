@@ -27,10 +27,17 @@ router = APIRouter()
 async def health_check(settings: Settings = Depends(get_settings)) -> HealthResponse:
     """Basic health check endpoint."""
 
+    # Include vector backend and collection/class name for clients
+    if settings.vector_backend.lower() == "weaviate":
+        collection_name = settings.database.weaviate.class_name
+    else:
+        collection_name = settings.database.milvus.collection_name
+
     components = {
         "api": "healthy",
         "vector_backend": settings.vector_backend,
         "embedding_model": settings.embedding.model,
+        "collection_name": collection_name,
         "reranker": {
             "local": settings.rerank.local_enabled,
             "cohere": settings.rerank.cohere_enabled,

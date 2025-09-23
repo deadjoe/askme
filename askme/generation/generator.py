@@ -158,7 +158,9 @@ class LocalOllamaGenerator(BaseGenerator):
         def build_prompt(selected: List[Passage]) -> str:
             context_parts = []
             for p in selected:
-                context_parts.append(f"[{p.doc_id}: {p.title}]\n{p.content}\n")
+                # Avoid inline doc-id style markers in the prompt to reduce
+                # the chance of the model copying them into the answer.
+                context_parts.append(f"{p.title}\n{p.content}\n")
             context = "\n\n".join(context_parts)
             return (
                 self.config.system_prompt
@@ -245,6 +247,33 @@ class LocalOllamaGenerator(BaseGenerator):
                 cleaned = re.sub(
                     r"</?(?:final|think|thinking)>", "", cleaned, flags=re.IGNORECASE
                 )
+
+                # Strip inline citation-style markers like [chunk_1234], [doc_1],
+                # or anything containing "#chunk" within brackets. Also drop
+                # explicit Source/Sources lines if the model emitted them.
+                def strip_inline_refs(text: str) -> str:
+                    patterns = [
+                        r"\[[^\]]*#chunk[^\]]*\]",
+                        (
+                            r"\[(?:chunk|doc(?:ument)?|passage|source|ref|"
+                            r"citation)[^\]]*\]"
+                        ),
+                    ]
+                    out = text
+                    for pat in patterns:
+                        out = re.sub(pat, "", out, flags=re.IGNORECASE)
+                    # Remove standalone sources lines
+                    out = re.sub(
+                        r"^\s*(?:sources?|参考来源)[:：].*$",
+                        "",
+                        out,
+                        flags=re.IGNORECASE | re.MULTILINE,
+                    )
+                    # Collapse excessive spaces left by removals
+                    out = re.sub(r"\s{2,}", " ", out).strip()
+                    return out
+
+                cleaned = strip_inline_refs(cleaned)
 
                 # Remove excessive meta-commentary while preserving content
                 excessive_patterns = [
@@ -334,7 +363,7 @@ class OpenAIChatGenerator(BaseGenerator):
         # Build messages with system + user including references
         context_parts = []
         for p in passages[:8]:
-            context_parts.append(f"[{p.doc_id}: {p.title}]\n{p.content}\n")
+            context_parts.append(f"{p.title}\n{p.content}\n")
         context = "\n\n".join(context_parts) or "No context provided."
 
         messages = [
@@ -364,7 +393,35 @@ class OpenAIChatGenerator(BaseGenerator):
                 return choice or ""
 
             result: str = await anyio.to_thread.run_sync(_call)
-            return result
+
+            # Best-effort strip inline citation markers for OpenAI path as well
+            try:
+                import re as _re
+
+                def _strip(text: str) -> str:
+                    t = _re.sub(
+                        r"\[[^\]]*#chunk[^\]]*\]", "", text, flags=_re.IGNORECASE
+                    )
+                    t = _re.sub(
+                        (
+                            r"\[(?:chunk|doc(?:ument)?|passage|source|ref|"
+                            r"citation)[^\]]*\]"
+                        ),
+                        "",
+                        t,
+                        flags=_re.IGNORECASE,
+                    )
+                    t = _re.sub(
+                        r"^\s*(?:sources?|参考来源)[:：].*$",
+                        "",
+                        t,
+                        flags=_re.IGNORECASE | _re.MULTILINE,
+                    )
+                    return _re.sub(r"\s{2,}", " ", t).strip()
+
+                return _strip(result)
+            except Exception:
+                return result
         except Exception:
             # Fall back to local template if OpenAI endpoint is unavailable
             st = SimpleTemplateGenerator(self.config)

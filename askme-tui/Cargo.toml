@@ -1,0 +1,53 @@
+[package]
+name = "askme-tui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Terminal UI client for askme RAG system"
+license = "MIT"
+authors = ["Your Name <your.email@example.com>"]
+
+[[bin]]
+name = "askme-tui"
+path = "src/main.rs"
+
+[dependencies]
+# TUI framework - using versions compatible with tui-textarea
+ratatui = "0.29"
+crossterm = "0.29"
+
+# Async runtime
+tokio = { version = "1.47", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Text input widget - using latest version
+tui-textarea = "0.7"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Configuration
+dirs = "5.0"
+toml = "0.8"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Modern spinner widget for Ratatui
+throbber-widgets-tui = "0.9"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
