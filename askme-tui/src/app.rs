@@ -88,6 +88,9 @@ pub struct App {
     // Background query task
     pub query_task: Option<JoinHandle<anyhow::Result<QueryResponse>>>,
     pub throbber: ThrobberState,
+
+    // Background ingest task (waits for completion)
+    pub ingest_task: Option<JoinHandle<anyhow::Result<crate::api::types::TaskStatus>>>,
 }
 
 impl App {
@@ -117,6 +120,7 @@ impl App {
             collection_chunks: None,
             query_task: None,
             throbber: ThrobberState::default(),
+            ingest_task: None,
         })
     }
 
@@ -275,98 +279,7 @@ impl App {
 
     // Removed unused process_query; query now runs in a background task
 
-    /// Process an ingest request
-    pub async fn process_ingest(&mut self) -> Result<()> {
-        self.set_status("Starting ingestion...");
-
-        let request = self.ingest_tab.get_ingest_request();
-
-        match self.api_client.ingest(request).await {
-            Ok(response) => {
-                self.set_status(&format!("Ingestion started: {}", response.task_id));
-                self.clear_error();
-
-                // Start polling for status
-                let task_id = response.task_id;
-                self.poll_ingest_status(&task_id).await?;
-
-                Ok(())
-            }
-            Err(e) => {
-                self.set_error(&format!("Ingestion failed: {}", e));
-                Err(e)
-            }
-        }
-    }
-
-    /// Poll ingestion task status
-    async fn poll_ingest_status(&mut self, task_id: &str) -> Result<()> {
-        let task_id = task_id.to_string();
-
-        // Create a channel for status updates
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        // Poll task status in a separate task
-        let api_client = self.api_client.clone();
-        let mut poll_handle = tokio::spawn(async move {
-            api_client.poll_task_status(&task_id, move |status| {
-                let _ = sender.send(status.clone());
-            }).await
-        });
-
-        // Handle status updates
-        loop {
-            tokio::select! {
-                status_opt = receiver.recv() => {
-                    if let Some(status) = status_opt {
-                        self.ingest_tab.update_task_status(status.clone());
-
-                        match status.status.as_str() {
-                            "processing" => {
-                                let progress = status.progress.unwrap_or(0.0);
-                                let processed = status.documents_processed.unwrap_or(0);
-                                self.set_status(&format!(
-                                    "Processing: {:.1}% ({} docs)",
-                                    progress, processed
-                                ));
-                            }
-                            "queued" => {
-                                self.set_status("Queued for processing...");
-                            }
-                            "completed" => {
-                                self.set_status("Ingestion completed successfully");
-                                let _ = poll_handle.await;
-                                return Ok(());
-                            }
-                            "failed" => {
-                                let error_msg = status.error_message.unwrap_or("Unknown error".to_string());
-                                self.set_error(&format!("Ingestion failed: {}", error_msg));
-                                let _ = poll_handle.await;
-                                return Err(anyhow::anyhow!("Ingestion failed: {}", error_msg));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                result = &mut poll_handle => {
-                    match result {
-                        Ok(Ok(_)) => {
-                            self.set_status("Ingestion completed successfully");
-                            return Ok(());
-                        }
-                        Ok(Err(e)) => {
-                            self.set_error(&format!("Ingestion failed: {}", e));
-                            return Err(e);
-                        }
-                        Err(e) => {
-                            self.set_error(&format!("Ingestion task failed: {}", e));
-                            return Err(anyhow::anyhow!("Task join error: {}", e));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Removed legacy ingest methods; ingestion now runs as a background task
 }
 
 #[cfg(test)]
