@@ -138,12 +138,6 @@ impl IngestTab {
         }
     }
 
-    /// Start processing
-    pub fn start_processing(&mut self) {
-        self.processing = true;
-        self.current_task = None;
-    }
-
     /// Clear current task
     #[allow(dead_code)]
     pub fn clear_current_task(&mut self) {
