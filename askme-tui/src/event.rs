@@ -268,14 +268,14 @@ pub mod key_utils {
         Right,
     }
 
-    /// Check if key event is a number
-    pub fn is_number(key_event: KeyEvent) -> Option<u8> {
+    /// Check if key event is function key for tab switching (F1-F4)
+    pub fn is_function_key_tab(key_event: KeyEvent) -> Option<u8> {
         match key_event {
             KeyEvent {
-                code: KeyCode::Char(c),
+                code: KeyCode::F(n),
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if c.is_ascii_digit() => c.to_digit(10).map(|d| d as u8),
+            } if n >= 1 && n <= 4 => Some(n as u8),
             _ => None,
         }
     }
@@ -349,8 +349,8 @@ mod tests {
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         assert_eq!(is_arrow(up), Some(Direction::Up));
 
-        let digit_5 = KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE);
-        assert_eq!(is_number(digit_5), Some(5));
+        let f3_key = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
+        assert_eq!(is_function_key_tab(f3_key), Some(3));
 
         let page_up = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
         assert_eq!(is_page(page_up), Some(Direction::Up));

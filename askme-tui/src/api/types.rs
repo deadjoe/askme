@@ -3,6 +3,67 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Custom datetime deserializer that handles timestamps without timezone
+mod datetime_format {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Use a visitor to handle missing fields gracefully
+        struct DateTimeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for DateTimeVisitor {
+            type Value = Option<DateTime<Utc>>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an optional datetime string")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(None)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let s: Option<String> = Option::deserialize(deserializer)?;
+                match s {
+                    Some(s) => {
+                        // Try parsing with Z suffix first (standard RFC3339)
+                        if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+                            return Ok(Some(dt.with_timezone(&Utc)));
+                        }
+
+                        // If that fails, try adding Z suffix (assume UTC)
+                        if let Ok(dt) = DateTime::parse_from_rfc3339(&format!("{}Z", s)) {
+                            return Ok(Some(dt.with_timezone(&Utc)));
+                        }
+
+                        Err(serde::de::Error::custom(format!("Invalid datetime format: {}", s)))
+                    }
+                    None => Ok(None),
+                }
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(None)
+            }
+        }
+
+        deserializer.deserialize_option(DateTimeVisitor)
+    }
+}
+
 /// Ingest request payload
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestRequest {
@@ -12,12 +73,31 @@ pub struct IngestRequest {
     pub overwrite: bool,
 }
 
-/// Ingest response
+/// Ingest response (flexible format to handle different API versions)
 #[derive(Debug, Clone, Deserialize)]
 pub struct IngestResponse {
     pub task_id: String,
     pub status: String,
+
+    // Old format fields (with datetime and detailed progress)
+    #[serde(default)]
+    pub progress: Option<f64>,
+    #[serde(default)]
+    pub documents_processed: Option<u32>,
+    #[serde(default)]
+    pub total_documents: Option<u32>,
+    #[serde(default)]
+    pub error_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "datetime_format::deserialize")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "datetime_format::deserialize")]
+    pub completed_at: Option<DateTime<Utc>>,
+
+    // New format fields
+    #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub document_count: Option<u32>,
 }
 
 /// Task status response
@@ -27,8 +107,11 @@ pub struct TaskStatus {
     pub status: String, // "queued", "processing", "completed", "failed"
     pub progress: Option<f64>,
     pub documents_processed: Option<u32>,
+    pub total_documents: Option<u32>,
     pub error_message: Option<String>,
+    #[serde(deserialize_with = "datetime_format::deserialize")]
     pub started_at: Option<DateTime<Utc>>,
+    #[serde(deserialize_with = "datetime_format::deserialize")]
     pub completed_at: Option<DateTime<Utc>>,
 }
 
@@ -240,5 +323,86 @@ mod tests {
         assert_eq!("bge_local".parse::<Reranker>().unwrap(), Reranker::BgeLocal);
         assert_eq!("cohere".parse::<Reranker>().unwrap(), Reranker::Cohere);
         assert!("invalid".parse::<Reranker>().is_err());
+    }
+
+    #[test]
+    fn test_ingest_response_parsing() {
+        let test_json = r#"{"task_id":"a956c280-1977-4bdc-bfd4-5d47a44902d3","status":"processing","progress":0.0,"documents_processed":0,"total_documents":1,"error_message":null,"started_at":"2025-09-23T17:17:19.096087","completed_at":null}"#;
+
+        println!("Testing JSON: {}", test_json);
+        println!("JSON length: {}", test_json.len());
+
+        // Test individual components first
+        let timestamp_str = "2025-09-23T17:17:19.096087";
+        match chrono::DateTime::parse_from_rfc3339(&format!("{}Z", timestamp_str)) {
+            Ok(dt) => println!("Timestamp parsed successfully: {}", dt),
+            Err(e) => println!("Timestamp parsing failed: {}", e),
+        }
+
+        let result = serde_json::from_str::<IngestResponse>(test_json);
+        match result {
+            Ok(response) => {
+                assert_eq!(response.task_id, "a956c280-1977-4bdc-bfd4-5d47a44902d3");
+                assert_eq!(response.status, "processing");
+                assert_eq!(response.progress, Some(0.0));
+                assert_eq!(response.documents_processed, Some(0));
+                assert_eq!(response.total_documents, Some(1));
+                assert!(response.error_message.is_none());
+                assert!(response.started_at.is_some());
+                assert!(response.completed_at.is_none());
+            }
+            Err(e) => {
+                println!("JSON parsing failed: {}", e);
+                println!("Error details: {:?}", e);
+                panic!("Failed to parse IngestResponse: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_task_status_parsing() {
+        let test_json = r#"{"task_id":"a956c280-1977-4bdc-bfd4-5d47a44902d3","status":"processing","progress":0.0,"documents_processed":0,"total_documents":1,"error_message":null,"started_at":"2025-09-23T17:17:19.096087","completed_at":null}"#;
+
+        let result = serde_json::from_str::<TaskStatus>(test_json);
+        match result {
+            Ok(task) => {
+                assert_eq!(task.task_id, "a956c280-1977-4bdc-bfd4-5d47a44902d3");
+                assert_eq!(task.status, "processing");
+                assert_eq!(task.progress, Some(0.0));
+                assert_eq!(task.documents_processed, Some(0));
+                assert_eq!(task.total_documents, Some(1));
+                assert!(task.error_message.is_none());
+                assert!(task.started_at.is_some());
+                assert!(task.completed_at.is_none());
+            }
+            Err(e) => {
+                panic!("Failed to parse TaskStatus: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_ingest_response_parsing() {
+        let test_json = r#"{"task_id":"0729fde2-3392-4a0d-813a-e40589d5562d","status":"queued","message":null,"document_count":null}"#;
+
+        let result = serde_json::from_str::<IngestResponse>(test_json);
+        match result {
+            Ok(response) => {
+                assert_eq!(response.task_id, "0729fde2-3392-4a0d-813a-e40589d5562d");
+                assert_eq!(response.status, "queued");
+                assert!(response.message.is_none());
+                assert!(response.document_count.is_none());
+                // Old format fields should be None for new format
+                assert!(response.progress.is_none());
+                assert!(response.documents_processed.is_none());
+                assert!(response.total_documents.is_none());
+                assert!(response.error_message.is_none());
+                assert!(response.started_at.is_none());
+                assert!(response.completed_at.is_none());
+            }
+            Err(e) => {
+                panic!("Failed to parse new IngestResponse: {}", e);
+            }
+        }
     }
 }
