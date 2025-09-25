@@ -89,8 +89,17 @@ pub struct App {
     pub query_task: Option<JoinHandle<anyhow::Result<QueryResponse>>>,
     pub throbber: ThrobberState,
 
-    // Background ingest task (waits for completion)
-    pub ingest_task: Option<JoinHandle<anyhow::Result<crate::api::types::TaskStatus>>>,
+    // Background ingest task (submits request)
+    pub ingest_task: Option<JoinHandle<anyhow::Result<crate::api::types::IngestResponse>>>,
+
+    // Current ingest task ID for status polling
+    pub current_ingest_task_id: Option<String>,
+
+    // Channel for receiving ingest progress updates
+    pub ingest_progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::api::types::TaskStatus>>,
+
+    // Background ingest polling task handle
+    pub ingest_polling_task: Option<JoinHandle<anyhow::Result<crate::api::types::TaskStatus>>>,
 }
 
 impl App {
@@ -121,6 +130,9 @@ impl App {
             query_task: None,
             throbber: ThrobberState::default(),
             ingest_task: None,
+            current_ingest_task_id: None,
+            ingest_progress_rx: None,
+            ingest_polling_task: None,
         })
     }
 

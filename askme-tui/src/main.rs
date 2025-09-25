@@ -191,6 +191,58 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
             // Check background query completion to update UI and dismiss modal
             // Advance spinner animation
             app.throbber.calc_next();
+
+            // Check for ingest progress updates
+            if let Some(ref mut rx) = app.ingest_progress_rx {
+                while let Ok(status) = rx.try_recv() {
+                    app.ingest_tab.update_task_status(status.clone());
+
+                    // Check if task is completed
+                    if matches!(status.status.as_str(), "completed" | "failed") {
+                        if status.status == "completed" {
+                            let docs_count = status.documents_processed.unwrap_or(0);
+                            app.set_status(&format!("Ingestion completed: {} documents processed", docs_count));
+                        } else {
+                            let msg = status.error_message.unwrap_or_else(|| status.status.clone());
+                            app.set_error(&format!("Ingestion failed: {}", msg));
+                        }
+                        app.ingest_tab.processing = false;
+                        app.current_ingest_task_id = None;
+                        app.ingest_progress_rx = None;
+                        app.ingest_polling_task = None;
+                        break;
+                    }
+                }
+            }
+
+            // Check if polling task completed/failed
+            if let Some(ref mut handle) = app.ingest_polling_task {
+                if handle.is_finished() {
+                    match handle.await {
+                        Ok(Ok(final_status)) => {
+                            // This should not happen as progress updates should handle completion
+                            app.ingest_tab.update_task_status(final_status.clone());
+                            if final_status.status == "completed" {
+                                let docs_count = final_status.documents_processed.unwrap_or(0);
+                                app.set_status(&format!("Ingestion completed: {} documents processed", docs_count));
+                            } else {
+                                let msg = final_status.error_message.unwrap_or_else(|| final_status.status.clone());
+                                app.set_error(&format!("Ingestion failed: {}", msg));
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            app.set_error(&format!("Polling failed: {}", e));
+                        }
+                        Err(e) => {
+                            app.set_error(&format!("Polling task error: {}", e));
+                        }
+                    }
+                    app.ingest_tab.processing = false;
+                    app.current_ingest_task_id = None;
+                    app.ingest_progress_rx = None;
+                    app.ingest_polling_task = None;
+                }
+            }
             // Query task
             if let Some(handle) = &mut app.query_task {
                 if handle.is_finished() {
@@ -218,25 +270,62 @@ async fn handle_event(app: &mut App, event: AppEvent) -> Result<bool> {
             if let Some(handle) = &mut app.ingest_task {
                 if handle.is_finished() {
                     match handle.await {
-                        Ok(Ok(status)) => {
-                            // Update the ingest tab with the final status
-                            app.ingest_tab.update_task_status(status.clone());
+                        Ok(Ok(resp)) => {
+                            // Convert IngestResponse to TaskStatus for consistency
+                            let initial_status = crate::api::types::TaskStatus {
+                                task_id: resp.task_id.clone(),
+                                status: resp.status,
+                                progress: resp.progress,
+                                documents_processed: resp.documents_processed.or(resp.document_count),
+                                total_documents: resp.total_documents.or(resp.document_count),
+                                error_message: resp.error_message.or(resp.message),
+                                started_at: resp.started_at,
+                                completed_at: resp.completed_at,
+                            };
 
-                            if status.status == "completed" {
-                                let docs_count = status.documents_processed.unwrap_or(0);
-                                app.set_status(&format!("Ingestion completed: {} documents processed", docs_count));
+                            // Update the ingest tab with the initial status
+                            app.ingest_tab.update_task_status(initial_status.clone());
+
+                            // Set up polling for progress updates if not completed/failed
+                            if !matches!(initial_status.status.as_str(), "completed" | "failed") {
+                                app.current_ingest_task_id = Some(initial_status.task_id.clone());
+
+                                // Start progress polling
+                                let api_client = app.api_client.clone();
+                                match api_client.poll_task_status_with_updates(&initial_status.task_id).await {
+                                    Ok((rx, handle)) => {
+                                        app.ingest_progress_rx = Some(rx);
+                                        app.ingest_polling_task = Some(handle);
+                                    }
+                                    Err(e) => {
+                                        app.set_error(&format!("Failed to start progress polling: {}", e));
+                                    }
+                                }
                             } else {
-                                let msg = status.error_message.unwrap_or_else(|| status.status.clone());
-                                app.set_error(&format!("Ingestion failed: {}", msg));
+                                // Task already completed/failed
+                                if initial_status.status == "completed" {
+                                    let docs_count = initial_status.documents_processed.unwrap_or(0);
+                                    app.set_status(&format!("Ingestion completed: {} documents processed", docs_count));
+                                } else {
+                                    let msg = initial_status.error_message.unwrap_or_else(|| initial_status.status.clone());
+                                    app.set_error(&format!("Ingestion failed: {}", msg));
+                                }
+                                app.ingest_tab.processing = false;
+                                app.current_ingest_task_id = None;
                             }
-                            app.ingest_tab.processing = false;
                         }
                         Ok(Err(e)) => {
                             app.ingest_tab.processing = false;
+                            app.current_ingest_task_id = None;
+                            app.ingest_progress_rx = None;
+                            app.ingest_polling_task = None;
                             app.set_error(&format!("Ingestion failed: {}", e));
                         }
                         Err(e) => {
                             app.ingest_tab.processing = false;
+                            app.current_ingest_task_id = None;
+                            app.ingest_progress_rx = None;
+                            app.ingest_polling_task = None;
                             app.set_error(&format!("Ingestion task error: {}", e));
                         }
                     }
@@ -287,53 +376,18 @@ async fn handle_ingest_submission(app: &mut App) -> Result<()> {
     }
 
     debug!("Submitting ingest request: {}", path);
-
-    // Create an initial dummy task status to show immediately
-    let dummy_task_id = format!("pending-{}", chrono::Utc::now().timestamp());
-    let initial_dummy_status = crate::api::types::TaskStatus {
-        task_id: dummy_task_id,
-        status: "submitting".to_string(),
-        progress: Some(0.0),
-        documents_processed: Some(0),
-        total_documents: None,
-        error_message: None,
-        started_at: Some(chrono::Utc::now()),
-        completed_at: None,
-    };
-
-    // Set the dummy status immediately so UI updates
-    app.ingest_tab.update_task_status(initial_dummy_status);
-
-    // Start processing (but don't clear current_task since we just set it)
     app.ingest_tab.processing = true;
 
-    // Spawn background ingest: submit + poll until completion
+    // Spawn background ingest: submit and immediately start polling
     let request = app.ingest_tab.get_ingest_request();
     let api = app.api_client.clone();
 
     app.ingest_task = Some(tokio::spawn(async move {
+        // Submit the ingest request
         let resp = api.ingest(request).await?;
 
-        // Convert IngestResponse to TaskStatus for consistency
-        let initial_status = crate::api::types::TaskStatus {
-            task_id: resp.task_id.clone(),
-            status: resp.status,
-            progress: resp.progress,
-            documents_processed: resp.documents_processed.or(resp.document_count),
-            total_documents: resp.total_documents.or(resp.document_count),
-            error_message: resp.error_message.or(resp.message),
-            started_at: resp.started_at,
-            completed_at: resp.completed_at,
-        };
-
-        // If already completed/failed, return immediately
-        if matches!(initial_status.status.as_str(), "completed" | "failed") {
-            return Ok::<_, anyhow::Error>(initial_status);
-        }
-
-        // Otherwise poll until completion
-        let status = api.poll_task_status(&resp.task_id, |_| {}).await?;
-        Ok::<_, anyhow::Error>(status)
+        // Return the initial response immediately
+        Ok::<_, anyhow::Error>(resp)
     }));
 
     Ok(())

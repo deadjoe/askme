@@ -131,7 +131,7 @@ impl ApiClient {
     {
         let mut interval = tokio::time::interval(Duration::from_secs(2));
         let start = std::time::Instant::now();
-        let timeout = Duration::from_secs(300); // 5 minutes timeout
+        let timeout = Duration::from_secs(3600); // 1 hour timeout
 
         loop {
             interval.tick().await;
@@ -161,6 +161,21 @@ impl ApiClient {
                 }
             }
         }
+    }
+
+    /// Poll task status with progress updates via channel
+    pub async fn poll_task_status_with_updates(&self, task_id: &str) -> Result<(tokio::sync::mpsc::UnboundedReceiver<TaskStatus>, tokio::task::JoinHandle<Result<TaskStatus>>)> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let api_client = self.clone();
+        let task_id = task_id.to_string();
+
+        let handle = tokio::spawn(async move {
+            api_client.poll_task_status(&task_id, move |status| {
+                let _ = tx.send(status.clone());
+            }).await
+        });
+
+        Ok((rx, handle))
     }
 
     /// Handle HTTP response and parse JSON or error
