@@ -312,9 +312,8 @@ class BGEReranker(BaseReranker):
         """
         Fallback character-based truncation with better multi-byte handling.
         """
-        # Better estimation for different text types
-        query_char_count = len(query)
 
+        # Better estimation for different text types
         # Estimate tokens more accurately based on text characteristics
         def estimate_token_count(text: str) -> int:
             # More sophisticated estimation
