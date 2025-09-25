@@ -56,6 +56,11 @@ class MilvusRetriever(VectorRetriever):
         self.collection: Optional[Collection] = None
         self.dimension = config.get("dimension", 1024)
 
+    @property
+    def supports_native_upsert(self) -> bool:
+        """Milvus 2.6+ supports native upsert operations."""
+        return True
+
     async def connect(self) -> None:
         """Connect to Milvus server."""
         try:
@@ -186,14 +191,14 @@ class MilvusRetriever(VectorRetriever):
                     }
                 )
 
-            # Insert into collection
-            result = self.collection.insert(data)
+            # Use upsert for native overwrite support (Milvus 2.6+)
+            result = self.collection.upsert(data)
 
             # Flush to ensure data is written
             self.collection.flush()
 
             logger.info(
-                f"Inserted {len(documents)} documents into {self.collection_name}"
+                f"Upserted {len(documents)} documents into {self.collection_name}"
             )
             # Ensure primary keys are returned as strings
             try:

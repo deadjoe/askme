@@ -8,7 +8,7 @@ import mimetypes
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -21,6 +21,11 @@ from markdownify import markdownify
 from askme.retriever.base import Document
 
 logger = logging.getLogger(__name__)
+
+
+def get_utc_timestamp() -> str:
+    """Get current UTC timestamp in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 @dataclass
@@ -89,7 +94,7 @@ class PDFProcessor(DocumentProcessor):
                 "file_path": str(file_path),
                 "file_size": file_path.stat().st_size,
                 "page_count": page_count,
-                "created_at": datetime.now().isoformat(),
+                "created_at": get_utc_timestamp(),
                 "pdf_title": pdf_info.get("/Title", ""),
                 "pdf_author": pdf_info.get("/Author", ""),
                 "pdf_subject": pdf_info.get("/Subject", ""),
@@ -106,7 +111,7 @@ class PDFProcessor(DocumentProcessor):
                 "processor": "PDFProcessor",
                 "pages_processed": page_count,
                 "total_characters": len(full_text),
-                "processing_time": datetime.now().isoformat(),
+                "processing_time": get_utc_timestamp(),
             }
 
             return ProcessedDocument(
@@ -172,7 +177,7 @@ class MarkdownProcessor(DocumentProcessor):
                 "source_type": "markdown",
                 "file_path": str(file_path),
                 "file_size": file_path.stat().st_size,
-                "created_at": datetime.now().isoformat(),
+                "created_at": get_utc_timestamp(),
                 "encoding": "utf-8",
                 **(metadata or {}),
             }
@@ -181,7 +186,7 @@ class MarkdownProcessor(DocumentProcessor):
                 "processor": "MarkdownProcessor",
                 "lines_processed": len(lines),
                 "total_characters": len(content),
-                "processing_time": datetime.now().isoformat(),
+                "processing_time": get_utc_timestamp(),
             }
 
             return ProcessedDocument(
@@ -216,12 +221,72 @@ class HTMLProcessor(DocumentProcessor):
             # Parse HTML
             soup = BeautifulSoup(html_content, "html.parser")
 
-            # Extract title
+            # Extract title before cleaning
             title_tag = soup.find("title")
             title = title_tag.get_text().strip() if title_tag else file_path.stem
 
-            # Convert to markdown for better structure preservation
-            markdown_content = markdownify(html_content, heading_style="ATX")
+            # Remove noise elements
+            noise_tags = [
+                "script",
+                "style",
+                "nav",
+                "footer",
+                "header",
+                "aside",
+                "advertisement",
+                "ads",
+                "sidebar",
+                "menu",
+                "toolbar",
+                "button",
+                "form",
+                "input",
+                "select",
+                "textarea",
+                "iframe",
+                "embed",
+                "object",
+                "applet",
+            ]
+
+            for tag_name in noise_tags:
+                for tag in soup.find_all(tag_name):
+                    tag.decompose()
+
+            # Remove elements by class/id patterns (common ad/navigation patterns)
+            noise_patterns = [
+                "nav",
+                "menu",
+                "sidebar",
+                "footer",
+                "header",
+                "ad",
+                "advertisement",
+                "social",
+                "share",
+                "comment",
+                "breadcrumb",
+                "pagination",
+            ]
+
+            for pattern in noise_patterns:
+                # Remove by class
+                for element in soup.find_all(
+                    attrs={
+                        "class": lambda x: x
+                        and any(pattern in str(cls).lower() for cls in x)
+                    }
+                ):
+                    element.decompose()
+                # Remove by id
+                for element in soup.find_all(
+                    attrs={"id": lambda x: x and pattern in str(x).lower()}
+                ):
+                    element.decompose()
+
+            # Get cleaned HTML and convert to markdown
+            cleaned_html = str(soup)
+            markdown_content = markdownify(cleaned_html, heading_style="ATX")
 
             # Extract metadata from HTML
             meta_tags = soup.find_all("meta")
@@ -237,7 +302,7 @@ class HTMLProcessor(DocumentProcessor):
                 "source_type": "html",
                 "file_path": str(file_path),
                 "file_size": file_path.stat().st_size,
-                "created_at": datetime.now().isoformat(),
+                "created_at": get_utc_timestamp(),
                 "html_title": title,
                 "html_meta": html_meta,
                 "encoding": "utf-8",
@@ -249,7 +314,7 @@ class HTMLProcessor(DocumentProcessor):
                 "original_size": len(html_content),
                 "markdown_size": len(markdown_content),
                 "total_characters": len(markdown_content),
-                "processing_time": datetime.now().isoformat(),
+                "processing_time": get_utc_timestamp(),
             }
 
             return ProcessedDocument(
@@ -317,7 +382,7 @@ class TextProcessor(DocumentProcessor):
                 "source_type": "text",
                 "file_path": str(file_path),
                 "file_size": file_path.stat().st_size,
-                "created_at": datetime.now().isoformat(),
+                "created_at": get_utc_timestamp(),
                 "encoding": used_encoding,
                 **(metadata or {}),
             }
@@ -326,7 +391,7 @@ class TextProcessor(DocumentProcessor):
                 "processor": "TextProcessor",
                 "encoding_used": used_encoding,
                 "total_characters": len(content),
-                "processing_time": datetime.now().isoformat(),
+                "processing_time": get_utc_timestamp(),
             }
 
             return ProcessedDocument(
@@ -368,15 +433,28 @@ class DocumentChunker:
         # Create chunk documents with metadata
         chunk_docs = []
         for i, chunk_text in enumerate(chunks):
-            chunk_id = f"{processed_doc.source_path}#chunk_{i}"
+            # Generate content-based hash for stable ID
+            content_hash = hashlib.md5(
+                chunk_text.encode("utf-8"), usedforsecurity=False
+            ).hexdigest()[
+                :16
+            ]  # Use first 16 chars for brevity
+
+            # Create stable chunk ID based on source + content hash
+            source_name = Path(processed_doc.source_path).stem
+            chunk_id = f"{source_name}#{content_hash}"
 
             chunk_metadata = {
                 **processed_doc.metadata,
                 "chunk_index": i,
                 "chunk_count": len(chunks),
                 "chunk_id": chunk_id,
+                "content_hash": content_hash,  # Full hash for deduplication
                 "source_document": processed_doc.source_path,
                 "chunk_method": self.config.method,
+                "chunk_size": self.config.chunk_size,
+                "chunk_overlap": self.config.chunk_overlap,
+                "chunk_tokens": len(chunk_text.split()),  # Approximate token count
             }
 
             chunk_docs.append(
@@ -455,8 +533,22 @@ class DocumentChunker:
         return chunks
 
     def _recursive_chunking(self, content: str) -> List[str]:
-        """Recursive chunking with multiple separators."""
-        separators = ["\n\n", "\n", ". ", " "]
+        """Recursive chunking with multiple separators including Chinese punctuation."""
+        separators = [
+            "\n\n",  # Double newline (paragraph breaks)
+            "\n",  # Single newline
+            "。",  # Chinese period
+            "！",  # Chinese exclamation
+            "？",  # Chinese question mark
+            ". ",  # English period with space
+            "! ",  # English exclamation with space
+            "? ",  # English question with space
+            "；",  # Chinese semicolon
+            "; ",  # English semicolon with space
+            "，",  # Chinese comma
+            ", ",  # English comma with space
+            " ",  # Space (last resort)
+        ]
         return self._recursive_split(content, separators, 0)
 
     def _recursive_split(

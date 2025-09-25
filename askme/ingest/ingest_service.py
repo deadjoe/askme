@@ -7,7 +7,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -18,6 +18,11 @@ from askme.ingest.document_processor import ChunkingConfig, DocumentProcessingPi
 from askme.retriever.base import Document, VectorRetriever
 
 logger = logging.getLogger(__name__)
+
+
+def get_utc_now() -> datetime:
+    """Get current UTC datetime."""
+    return datetime.now(timezone.utc)
 
 
 class TaskStatus(str, Enum):
@@ -47,6 +52,16 @@ class IngestionTask:
     processed_chunks: int = 0
     error_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    # Enhanced statistics
+    total_size_bytes: int = 0
+    files_by_type: Optional[Dict[str, int]] = None
+    processing_stages: Optional[Dict[str, float]] = None  # stage -> time_seconds
+
+    def __post_init__(self) -> None:
+        if self.files_by_type is None:
+            self.files_by_type = {}
+        if self.processing_stages is None:
+            self.processing_stages = {}
 
 
 @dataclass
@@ -60,6 +75,14 @@ class IngestionStats:
     files_by_type: Dict[str, int]
     chunks_per_document: float
     errors: List[str]
+    # Enhanced statistics
+    stage_timings: Optional[Dict[str, float]] = None  # stage -> total_time_seconds
+    avg_processing_time_per_file: float = 0.0
+    avg_file_size_bytes: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.stage_timings is None:
+            self.stage_timings = {}
 
 
 class IngestionService:
@@ -146,7 +169,7 @@ class IngestionService:
             source_type="file",
             source_path=str(file_path),
             status=TaskStatus.QUEUED,
-            created_at=datetime.utcnow(),
+            created_at=get_utc_now(),
             total_files=1,
             metadata={
                 "user_metadata": metadata or {},
@@ -212,7 +235,7 @@ class IngestionService:
             source_type="dir",
             source_path=str(dir_path),
             status=TaskStatus.QUEUED,
-            created_at=datetime.utcnow(),
+            created_at=get_utc_now(),
             total_files=file_count,
             metadata={
                 "user_metadata": metadata or {},
@@ -250,7 +273,17 @@ class IngestionService:
         """Process a single file ingestion task."""
         try:
             task.status = TaskStatus.PROCESSING
-            task.started_at = datetime.utcnow()
+            task.started_at = get_utc_now()
+            processing_start = get_utc_now()
+
+            # Collect file statistics
+            file_size = file_path.stat().st_size
+            file_extension = file_path.suffix.lower()
+            task.total_size_bytes += file_size
+            if task.files_by_type is not None:
+                task.files_by_type[file_extension] = (
+                    task.files_by_type.get(file_extension, 0) + 1
+                )
 
             # Process the file in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -258,24 +291,46 @@ class IngestionService:
                 self._executor, self._process_file_sync, file_path, metadata, tags
             )
 
+            # Track document processing time
+            processing_end = get_utc_now()
+            doc_processing_time = (processing_end - processing_start).total_seconds()
+            if task.processing_stages is not None:
+                task.processing_stages["document_processing"] = (
+                    task.processing_stages.get("document_processing", 0)
+                    + doc_processing_time
+                )
+
             task.total_chunks = len(documents)
 
             # Generate embeddings and ingest with yield points
+            embedding_start = get_utc_now()
             await self._ingest_documents_non_blocking(task, documents, overwrite)
+            embedding_end = get_utc_now()
+
+            # Track embedding and ingestion time
+            embedding_time = (embedding_end - embedding_start).total_seconds()
+            if task.processing_stages is not None:
+                task.processing_stages["embedding_and_ingestion"] = (
+                    task.processing_stages.get("embedding_and_ingestion", 0)
+                    + embedding_time
+                )
 
             # Mark as completed
             task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
+            task.completed_at = get_utc_now()
             task.processed_files = 1
 
             logger.info(
-                f"File ingestion task {task.task_id} completed: {len(documents)} chunks"
+                f"File ingestion task {task.task_id} completed: "
+                f"{len(documents)} chunks, {file_size} bytes, "
+                f"{doc_processing_time: .2f}s processing, "
+                f"{embedding_time: .2f}s embedding"
             )
 
         except Exception as e:
             task.status = TaskStatus.FAILED
             task.error_message = str(e)
-            task.completed_at = datetime.utcnow()
+            task.completed_at = get_utc_now()
             logger.error(f"File ingestion task {task.task_id} failed: {e}")
             raise
         finally:
@@ -340,7 +395,8 @@ class IngestionService:
         """Process a directory ingestion task."""
         try:
             task.status = TaskStatus.PROCESSING
-            task.started_at = datetime.utcnow()
+            task.started_at = get_utc_now()
+            processing_start = get_utc_now()
 
             # Process the directory in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -354,32 +410,65 @@ class IngestionService:
                 file_patterns,
             )
 
+            # Track document processing time
+            processing_end = get_utc_now()
+            doc_processing_time = (processing_end - processing_start).total_seconds()
+            if task.processing_stages is not None:
+                task.processing_stages["document_processing"] = doc_processing_time
+
             task.total_chunks = len(documents)
 
-            # Group documents by source file for progress tracking
+            # Group documents by source file for progress tracking and collect stats
             files_processed = set()
+            processed_file_paths = set()  # Track file paths to avoid double-counting
             for doc in documents:
                 source_file = doc.metadata.get("source_document", "unknown")
                 files_processed.add(source_file)
 
+                # Collect file statistics from document metadata (avoid double counting)
+                if "file_path" in doc.metadata:
+                    file_path = Path(doc.metadata["file_path"])
+                    if (
+                        file_path.exists()
+                        and str(file_path) not in processed_file_paths
+                    ):
+                        processed_file_paths.add(str(file_path))
+                        file_size = file_path.stat().st_size
+                        file_extension = file_path.suffix.lower()
+                        task.total_size_bytes += file_size
+                        if task.files_by_type is not None:
+                            task.files_by_type[file_extension] = (
+                                task.files_by_type.get(file_extension, 0) + 1
+                            )
+
             task.processed_files = len(files_processed)
 
             # Generate embeddings and ingest with yield points
+            embedding_start = get_utc_now()
             await self._ingest_documents_non_blocking(task, documents, overwrite)
+            embedding_end = get_utc_now()
+
+            # Track embedding and ingestion time
+            embedding_time = (embedding_end - embedding_start).total_seconds()
+            if task.processing_stages is not None:
+                task.processing_stages["embedding_and_ingestion"] = embedding_time
 
             # Mark as completed
             task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
+            task.completed_at = get_utc_now()
 
             logger.info(
                 f"Directory ingestion task {task.task_id} completed: "
-                f"{task.processed_files} files, {len(documents)} chunks"
+                f"{task.processed_files} files, {len(documents)} chunks, "
+                f"{task.total_size_bytes} bytes, "
+                f"{doc_processing_time: .2f}s processing, "
+                f"{embedding_time: .2f}s embedding"
             )
 
         except Exception as e:
             task.status = TaskStatus.FAILED
             task.error_message = str(e)
-            task.completed_at = datetime.utcnow()
+            task.completed_at = get_utc_now()
             logger.error(f"Directory ingestion task {task.task_id} failed: {e}")
             raise
         finally:
@@ -426,8 +515,8 @@ class IngestionService:
                 vector_docs.append(doc)
 
             # Handle overwrite logic
-            if overwrite:
-                # Delete existing documents with same IDs
+            if overwrite and not self.vector_retriever.supports_native_upsert:
+                # Only explicitly delete if the backend doesn't support native upsert
                 for doc in vector_docs:
                     try:
                         await self.vector_retriever.delete_document(doc.id)
@@ -435,21 +524,51 @@ class IngestionService:
                         pass  # Document might not exist
 
             # Insert into vector database
+            # (native upsert if supported, otherwise insert after delete)
             try:
-                await self.vector_retriever.insert_documents(vector_docs)
-                task.processed_chunks += len(vector_docs)
+                # Add retry mechanism for transient failures
+                max_retries = 3
+                retry_count = 0
+                while retry_count < max_retries:
+                    try:
+                        await self.vector_retriever.insert_documents(vector_docs)
+                        task.processed_chunks += len(vector_docs)
 
-                logger.debug(
-                    f"Ingested batch {i//batch_size + 1}: {len(vector_docs)} documents "
-                    f"({task.processed_chunks}/{task.total_chunks} total)"
-                )
+                        logger.debug(
+                            f"Ingested batch {i//batch_size + 1}: "
+                            f"{len(vector_docs)} documents "
+                            f"({task.processed_chunks}/{task.total_chunks} total)"
+                        )
+                        break  # Success, exit retry loop
+
+                    except Exception as batch_error:
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            logger.error(
+                                f"Failed to insert document batch after "
+                                f"{max_retries} retries: {batch_error}"
+                            )
+                            raise
+                        else:
+                            logger.warning(
+                                f"Insert batch failed (attempt "
+                                f"{retry_count}/{max_retries}): {batch_error}, retry..."
+                            )
+                            await asyncio.sleep(
+                                min(retry_count * 0.5, 2.0)
+                            )  # Exponential backoff
 
             except Exception as e:
                 logger.error(f"Failed to insert document batch: {e}")
                 raise
 
-            # Yield control to event loop after each batch to keep API responsive
-            await asyncio.sleep(0)
+            # Yield control and add backpressure management
+            await asyncio.sleep(0.01)  # Small delay for backpressure
+
+            # Optional: Check if we should slow down based on system load
+            # This could be expanded with more sophisticated backpressure
+            if (i + batch_size) % (batch_size * 10) == 0:  # Every 10 batches
+                await asyncio.sleep(0.1)  # Longer pause every 10 batches
 
     async def get_task_status(self, task_id: str) -> Optional[IngestionTask]:
         """Get the status of an ingestion task."""
@@ -467,7 +586,7 @@ class IngestionService:
             # Update task status
             if task_id in self._tasks:
                 self._tasks[task_id].status = TaskStatus.CANCELLED
-                self._tasks[task_id].completed_at = datetime.utcnow()
+                self._tasks[task_id].completed_at = get_utc_now()
 
             logger.info(f"Cancelled ingestion task {task_id}")
             return True
@@ -485,12 +604,27 @@ class IngestionService:
             # Calculate stats from completed tasks
             total_files = 0
             total_processing_time: float = 0.0
+            total_size_bytes = 0
             files_by_type: Dict[str, int] = {}
+            stage_timings: Dict[str, float] = {}
             errors = []
 
             for task in self._tasks.values():
                 if task.status == TaskStatus.COMPLETED:
                     total_files += task.processed_files
+                    total_size_bytes += task.total_size_bytes
+
+                    # Aggregate files by type
+                    if task.files_by_type is not None:
+                        for ext, count in task.files_by_type.items():
+                            files_by_type[ext] = files_by_type.get(ext, 0) + count
+
+                    # Aggregate stage timings
+                    if task.processing_stages is not None:
+                        for stage, timing in task.processing_stages.items():
+                            stage_timings[stage] = (
+                                stage_timings.get(stage, 0.0) + timing
+                            )
 
                     if task.started_at and task.completed_at:
                         processing_time = (
@@ -502,15 +636,22 @@ class IngestionService:
 
             total_chunks = collection_stats.get("num_entities", 0)
             chunks_per_doc = total_chunks / total_files if total_files > 0 else 0.0
+            avg_processing_time = (
+                total_processing_time / total_files if total_files > 0 else 0.0
+            )
+            avg_file_size = total_size_bytes / total_files if total_files > 0 else 0.0
 
             return IngestionStats(
                 total_documents=total_files,
                 total_chunks=total_chunks,
-                total_size_bytes=0,  # TODO: Calculate from task metadata
+                total_size_bytes=total_size_bytes,
                 processing_time_seconds=total_processing_time,
                 files_by_type=files_by_type,
                 chunks_per_document=chunks_per_doc,
                 errors=errors[-10:],  # Last 10 errors
+                stage_timings=stage_timings,
+                avg_processing_time_per_file=avg_processing_time,
+                avg_file_size_bytes=avg_file_size,
             )
 
         except Exception as e:
@@ -519,7 +660,7 @@ class IngestionService:
 
     async def cleanup_completed_tasks(self, older_than_hours: int = 24) -> int:
         """Clean up completed tasks older than specified hours."""
-        cutoff_time = datetime.utcnow().timestamp() - (older_than_hours * 3600)
+        cutoff_time = get_utc_now().timestamp() - (older_than_hours * 3600)
 
         cleaned_count = 0
         tasks_to_remove = []
@@ -563,30 +704,31 @@ class IngestionService:
                         "forcing shutdown"
                     )
 
-            # Forceful shutdown of thread pool with timeout
-            logger.info("Shutting down thread pool...")
-            # Don't wait indefinitely
-            self._executor.shutdown(wait=False)
+            # Shutdown thread pool with timeout
+            logger.info("Shutting down ingestion thread pool...")
+            try:
+                # Try modern shutdown with timeout (Python 3.9+)
+                import inspect
 
-            # Give it a moment to shutdown gracefully
-            import time
-
-            start_time = time.time()
-            while not self._executor._shutdown and (time.time() - start_time) < 2.0:
-                time.sleep(0.1)
-
-            # Force termination if still running
-            if not self._executor._shutdown:
-                logger.warning(
-                    "Thread pool did not shutdown gracefully, forcing termination"
-                )
+                shutdown_sig = inspect.signature(self._executor.shutdown)
+                if "timeout" in shutdown_sig.parameters:
+                    self._executor.shutdown(wait=True, timeout=2.0)  # type: ignore
+                    logger.info("Ingestion thread pool shut down gracefully")
+                else:
+                    # Fallback for older Python versions
+                    self._executor.shutdown(wait=True)
+                    logger.info("Ingestion thread pool shut down (no timeout support)")
+            except Exception as e:
+                logger.warning(f"Graceful shutdown failed: {e}, forcing shutdown")
                 try:
-                    # Try to terminate threads if possible
-                    for thread in self._executor._threads:
-                        if thread.is_alive():
-                            logger.warning(f"Force stopping thread: {thread.name}")
-                except Exception as e:
-                    logger.debug(f"Could not force stop threads: {e}")
+                    self._executor.shutdown(wait=False)
+                except Exception as force_e:
+                    logger.error(
+                        f"Failed to force shutdown ingestion thread pool: {force_e}"
+                    )
+            finally:
+                # Mark as None to prevent further use
+                self._executor = None  # type: ignore
 
             # Cleanup embedding service (with its own timeout)
             try:

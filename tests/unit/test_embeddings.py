@@ -96,8 +96,14 @@ class TestEmbeddingManager:
         """Test embedding caching behavior."""
         config = EmbeddingConfig()
         service = BGEEmbeddingService(config)
-        cast(Any, service).get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
-        cast(Any, service).get_sparse_embedding = AsyncMock(return_value={1: 0.5})
+        # Mock the new batch processing method instead of individual methods
+        mock_embedding = {
+            "text": "test text",
+            "dense_embedding": [0.1, 0.2],
+            "sparse_embedding": {1: 0.5},
+            "embedding_dim": 2,
+        }
+        cast(Any, service).encode_documents = AsyncMock(return_value=[mock_embedding])
 
         manager = EmbeddingManager(service)
 
@@ -109,10 +115,8 @@ class TestEmbeddingManager:
 
         assert result1 == result2
         # Service should only be called once due to caching
-        assert isinstance(service.get_dense_embedding, AsyncMock)
-        assert isinstance(service.get_sparse_embedding, AsyncMock)
-        service.get_dense_embedding.assert_called_once()
-        service.get_sparse_embedding.assert_called_once()
+        assert isinstance(service.encode_documents, AsyncMock)
+        service.encode_documents.assert_called_once_with(["test text"], batch_size=None)
 
     async def test_batch_processing(self: Any) -> None:
         """Test batch embedding processing."""
@@ -123,17 +127,43 @@ class TestEmbeddingManager:
 
         manager = EmbeddingManager(service)
 
+        # Mock batch processing with proper return format
+        mock_embeddings = [
+            {
+                "text": "text 1",
+                "dense_embedding": [0.1, 0.2],
+                "sparse_embedding": {1: 0.5},
+                "embedding_dim": 2,
+            },
+            {
+                "text": "text 2",
+                "dense_embedding": [0.3, 0.4],
+                "sparse_embedding": {2: 0.6},
+                "embedding_dim": 2,
+            },
+            {
+                "text": "text 3",
+                "dense_embedding": [0.5, 0.6],
+                "sparse_embedding": {3: 0.7},
+                "embedding_dim": 2,
+            },
+        ]
+        cast(Any, service).encode_documents = AsyncMock(return_value=mock_embeddings)
+
         texts = ["text 1", "text 2", "text 3"]
         results = await manager.get_document_embeddings(
             texts, batch_size=2, use_cache=False
         )
 
         assert len(results) == 3
-        for result in results:
+        for i, result in enumerate(results):
             assert "dense_embedding" in result
             assert "sparse_embedding" in result
-            assert result["dense_embedding"] == [0.1, 0.2]
-            assert result["sparse_embedding"] == {1: 0.5}
+            assert result["text"] == texts[i]
+
+        # Check that batch service was called once with the batch
+        assert isinstance(service.encode_documents, AsyncMock)
+        service.encode_documents.assert_called_once_with(texts, batch_size=2)
 
 
 class TestBGEEmbeddingServiceAdvanced:

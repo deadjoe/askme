@@ -505,23 +505,34 @@ class BGEEmbeddingService:
                 self.model = None
                 self._is_initialized = False
 
-            # Shutdown thread pool with timeout (restore original logic)
+            # Shutdown thread pool with timeout
             if hasattr(self, "_executor") and self._executor is not None:
                 logger.info("Shutting down BGE embedding thread pool...")
-                # Use original non-blocking approach with timeout
-                self._executor.shutdown(wait=False)
+                try:
+                    # Try modern shutdown with timeout (Python 3.9+)
+                    import inspect
 
-                # Give it a moment to shutdown gracefully
-                import time
-
-                start_time = time.time()
-                while not self._executor._shutdown and (time.time() - start_time) < 2.0:
-                    await asyncio.sleep(0.1)  # Use async sleep in async context
-
-                if not self._executor._shutdown:
-                    logger.warning(
-                        "BGE embedding thread pool did not shutdown gracefully"
-                    )
+                    shutdown_sig = inspect.signature(self._executor.shutdown)
+                    if "timeout" in shutdown_sig.parameters:
+                        self._executor.shutdown(wait=True, timeout=2.0)  # type: ignore
+                        logger.info("BGE embedding thread pool shut down gracefully")
+                    else:
+                        # Fallback for older Python versions
+                        self._executor.shutdown(wait=True)
+                        logger.info(
+                            "BGE embedding thread pool shut down (no timeout support)"
+                        )
+                except Exception as e:
+                    logger.warning(f"Graceful shutdown failed: {e}, forcing shutdown")
+                    try:
+                        self._executor.shutdown(wait=False)
+                    except Exception as force_e:
+                        logger.error(
+                            f"Failed to force shutdown BGE thread pool: {force_e}"
+                        )
+                finally:
+                    # Mark as None to prevent further use
+                    self._executor = None  # type: ignore
 
             logger.info("BGE embedding service cleaned up")
 
@@ -544,10 +555,10 @@ class EmbeddingManager:
         use_cache: bool = True,
         batch_size: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Get embeddings for documents with optional caching.
+        """Get embeddings for documents with caching and true batch processing."""
+        if not documents:
+            return []
 
-        Uses per-document service methods to allow easy mocking in tests.
-        """
         results: List[Optional[Dict[str, Any]]] = [None] * len(documents)
 
         # Resolve which docs to compute
@@ -563,21 +574,30 @@ class EmbeddingManager:
             else:
                 to_compute.append((i, doc))
 
-        # Compute embeddings for pending docs (sequential to simplify tests)
-        for idx, text in to_compute:
-            dense = await self.embedding_service.get_dense_embedding(text)
-            sparse = await self.embedding_service.get_sparse_embedding(text)
-            emb = {
-                "text": text,
-                "dense_embedding": dense,
-                "sparse_embedding": sparse,
-                "embedding_dim": len(dense),
-            }
-            if use_cache and len(self._cache) < self._cache_size_limit:
-                self._cache[self._hash_text(text)] = emb
-            results[idx] = emb
+        if not to_compute:
+            # All results from cache
+            return [r for r in results if r is not None]
 
-        # Type ignore: we ensure all filled above
+        # Extract texts to compute and their indices
+        indices_to_compute = [idx for idx, _ in to_compute]
+        texts_to_compute = [text for _, text in to_compute]
+
+        # Use true batch processing via encode_documents
+        batch_embeddings = await self.embedding_service.encode_documents(
+            texts_to_compute, batch_size=batch_size
+        )
+
+        # Update results and cache
+        for i, embedding in enumerate(batch_embeddings):
+            original_idx = indices_to_compute[i]
+            results[original_idx] = embedding
+
+            # Cache the result if caching enabled and under limit
+            if use_cache and len(self._cache) < self._cache_size_limit:
+                text = embedding["text"]
+                self._cache[self._hash_text(text)] = embedding
+
+        # Ensure all results are filled
         valid_results: List[Dict[str, Any]] = [r for r in results if r is not None]
         return valid_results
 
