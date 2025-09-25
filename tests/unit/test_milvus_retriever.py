@@ -161,10 +161,10 @@ class TestMilvusRetrieverCore:
         mock_collection = MagicMock()
         retriever.collection = mock_collection
 
-        # Mock successful insertion
+        # Mock successful upsert
         mock_result = MagicMock()
         mock_result.primary_keys = ["doc1", "doc2"]
-        mock_collection.insert.return_value = mock_result
+        mock_collection.upsert.return_value = mock_result
 
         documents = [
             Document(
@@ -186,7 +186,7 @@ class TestMilvusRetrieverCore:
         result_ids = await retriever.insert_documents(documents)
 
         assert result_ids == ["doc1", "doc2"]
-        mock_collection.insert.assert_called_once()
+        mock_collection.upsert.assert_called_once()
         mock_collection.flush.assert_called_once()
 
     @pytest.mark.asyncio
@@ -659,7 +659,7 @@ class TestMilvusRetrieverIntegration:
 
                             mock_result = MagicMock()
                             mock_result.primary_keys = ["integration_doc"]
-                            mock_collection.insert.return_value = mock_result
+                            mock_collection.upsert.return_value = mock_result
 
                             result_ids = await retriever.insert_documents(docs)
                             assert result_ids == ["integration_doc"]

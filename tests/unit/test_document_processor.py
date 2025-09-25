@@ -148,7 +148,9 @@ class TestDocumentChunker:
 
         assert len(chunk_docs) >= 1
         for i, chunk_doc in enumerate(chunk_docs):
-            assert chunk_doc["id"] == f"test.txt#chunk_{i}"
+            # Test new content-based chunk ID format
+            assert chunk_doc["id"].startswith("test#")
+            assert len(chunk_doc["id"].split("#")[1]) == 16  # 16-char hash
             assert len(chunk_doc["content"]) >= config.min_chunk_size
 
             metadata = chunk_doc["metadata"]
@@ -157,6 +159,13 @@ class TestDocumentChunker:
             assert metadata["source_document"] == "test.txt"
             assert metadata["chunk_method"] == "fixed"
             assert metadata["author"] == "test"
+            # Test new metadata fields
+            assert "content_hash" in metadata
+            assert "chunk_size" in metadata
+            assert "chunk_overlap" in metadata
+            assert "chunk_tokens" in metadata
+            assert metadata["chunk_size"] == config.chunk_size
+            assert metadata["chunk_overlap"] == config.chunk_overlap
             assert metadata["tags"] == ["test"]
 
 

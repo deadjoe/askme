@@ -69,6 +69,11 @@ async def test_initialize_calls_dependencies(svc: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_file_happy_path(svc: Any, tmp_path: Any) -> None:
+    # Create actual file for file stats collection
+    test_file = tmp_path / "sample.txt"
+    test_content = "This is test content for file processing"
+    test_file.write_text(test_content)
+
     # Prepare processor to return two documents
     docs = [
         Document(id="d1", content="hello"),
@@ -76,7 +81,7 @@ async def test_ingest_file_happy_path(svc: Any, tmp_path: Any) -> None:
     ]
     svc.processing_pipeline.process_file = AsyncMock(return_value=docs)
 
-    task_id = await svc.ingest_file(tmp_path / "sample.txt")
+    task_id = await svc.ingest_file(test_file)
 
     # Wait for background processing to complete
     await svc._running_tasks[task_id]
@@ -86,6 +91,14 @@ async def test_ingest_file_happy_path(svc: Any, tmp_path: Any) -> None:
     assert task.status == TaskStatus.COMPLETED
     assert task.total_chunks == 2
     assert task.processed_files == 1
+    # Test new statistics fields
+    assert task.total_size_bytes == len(test_content)
+    assert task.files_by_type is not None
+    assert ".txt" in task.files_by_type
+    assert task.files_by_type[".txt"] == 1
+    assert task.processing_stages is not None
+    assert "document_processing" in task.processing_stages
+    assert "embedding_and_ingestion" in task.processing_stages
     svc.vector_retriever.insert_documents.assert_awaited()
 
 

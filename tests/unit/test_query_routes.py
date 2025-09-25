@@ -149,7 +149,7 @@ class TestQueryRequestModel:
         req = QueryRequest(q="test query")
 
         assert req.q == "test query"
-        assert req.topk == 50
+        assert req.topk == 100  # Updated to match actual default value
         assert req.alpha == 0.5
         assert req.use_rrf is True
         assert req.rrf_k == 60
@@ -210,7 +210,7 @@ class TestRetrievalRequestModel:
         req = RetrievalRequest(q="test query")
 
         assert req.q == "test query"
-        assert req.topk == 50
+        assert req.topk == 100
         assert req.use_hyde is False
         assert req.use_rag_fusion is False
         assert req.alpha == 0.5
