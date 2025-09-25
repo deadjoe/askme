@@ -51,6 +51,15 @@ class VectorRetriever(ABC):
         self.config = config
         self.collection_name = config.get("collection_name", "askme_default")
 
+    @property
+    def supports_native_upsert(self) -> bool:
+        """Whether this retriever supports native upsert operations.
+
+        If True, insert_documents() will automatically overwrite existing documents
+        with the same ID without requiring explicit deletion.
+        """
+        return False
+
     @abstractmethod
     async def connect(self) -> None:
         """Connect to the vector database."""

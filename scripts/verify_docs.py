@@ -29,8 +29,8 @@ try:
 
         if results:
             print("以下是匹配到的部分实体ID示例:")
-            for i, item in enumerate(results[:5]):  # 显示最多5个作为示例
-                print(f"  - {item['id']}")
+            for item in results[:5]:  # 显示最多5个作为示例
+                print(f"- {item['id']}")
 
         print("\n这只是一个验证查询，没有删除任何数据。")
 

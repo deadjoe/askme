@@ -32,6 +32,11 @@ class WeaviateRetriever(VectorRetriever):
         self.collection = None
         self.dimension = config.get("dimension", 1024)
 
+    @property
+    def supports_native_upsert(self) -> bool:
+        """Weaviate supports native upsert via deterministic UUID generation."""
+        return True
+
     async def connect(self) -> None:
         try:
             if self.api_key:
