@@ -8,12 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from askme.core.config import RerankConfig
-from askme.rerank.rerank_service import (
-    BGEReranker,
-    CohereReranker,
-    RerankingService,
-    RerankResult,
-)
+from askme.rerank.rerank_service import BGEReranker, RerankingService, RerankResult
 from askme.retriever.base import Document, RetrievalResult
 
 
@@ -249,15 +244,24 @@ class TestBGEReranker:
         mock_model = MagicMock()
         mock_model.compute_score.return_value = [0.85]
 
+        # Mock tokenizer for token-based truncation
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.side_effect = [
+            [1] * 10,  # Query tokens (10 tokens)
+            [1] * 300,  # Content tokens (300 tokens, should be truncated)
+            [1] * (128 - 10 - 10),  # Truncated content tokens
+        ]
+        mock_tokenizer.decode.return_value = "Truncated content"
+        mock_model.tokenizer = mock_tokenizer
+
         reranker.model = mock_model
         reranker._is_initialized = True
 
         results = await reranker.rerank("query", [long_result], top_n=1)
 
         assert len(results) == 1
-        # Verify model was called with truncated content
-        call_args = mock_model.compute_score.call_args[0][0]
-        assert len(call_args[0][1]) <= config.local_max_length * 4  # Character limit
+        # Verify model was called (content should be truncated by tokenizer)
+        mock_model.compute_score.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_rerank_empty_documents(self: Any) -> None:
@@ -329,185 +333,6 @@ class TestBGEReranker:
             empty_cache_mock.assert_called_once()
 
 
-class TestCohereReranker:
-    """Test Cohere reranker."""
-
-    @pytest.fixture
-    def sample_documents(self: Any) -> List[RetrievalResult]:
-        """Create sample retrieval results for testing."""
-        docs = [
-            Document(
-                id="doc1", content="Machine learning algorithms for data analysis."
-            ),
-            Document(
-                id="doc2", content="Natural language processing with transformers."
-            ),
-        ]
-
-        return [
-            RetrievalResult(
-                document=docs[0], score=0.9, rank=1, retrieval_method="dense"
-            ),
-            RetrievalResult(
-                document=docs[1], score=0.8, rank=2, retrieval_method="sparse"
-            ),
-        ]
-
-    def test_initialization_with_api_key(self: Any) -> None:
-        """Test Cohere reranker initialization with API key."""
-        config = RerankConfig()
-        mock_client = MagicMock()
-
-        with patch("cohere.Client", return_value=mock_client) as mock_cohere:
-            reranker = CohereReranker(config, api_key="test-api-key")
-
-            assert reranker.config == config
-            assert reranker.api_key == "test-api-key"
-            assert reranker.client == mock_client
-            mock_cohere.assert_called_once_with("test-api-key")
-
-    def test_initialization_without_api_key(self: Any) -> None:
-        """Test Cohere reranker initialization without API key."""
-        config = RerankConfig()
-        reranker = CohereReranker(config, api_key=None)
-
-        assert reranker.config == config
-        assert reranker.api_key is None
-        assert reranker.client is None
-
-    @pytest.mark.asyncio
-    async def test_rerank_success(
-        self: Any, sample_documents: List[RetrievalResult]
-    ) -> None:
-        """Test successful Cohere reranking."""
-        config = RerankConfig(
-            cohere_model="rerank-english-v3.0",
-            cohere_return_documents=True,
-            cohere_max_chunks_per_doc=1,
-        )
-
-        # Mock Cohere API response
-        mock_result1 = MagicMock()
-        mock_result1.index = 1  # Second document ranks higher
-        mock_result1.relevance_score = 0.92
-
-        mock_result2 = MagicMock()
-        mock_result2.index = 0  # First document ranks lower
-        mock_result2.relevance_score = 0.88
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result1, mock_result2]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        reranker = CohereReranker(config, api_key="test-key")
-        reranker.client = mock_client
-
-        results = await reranker.rerank(
-            "machine learning query", sample_documents, top_n=2
-        )
-
-        assert len(results) == 2
-
-        # Check API call
-        mock_client.rerank.assert_called_once_with(
-            model="rerank-english-v3.0",
-            query="machine learning query",
-            documents=[
-                "Machine learning algorithms for data analysis.",
-                "Natural language processing with transformers.",
-            ],
-            top_n=2,
-            return_documents=True,
-            max_chunks_per_doc=1,
-        )
-
-        # Check results mapping
-        assert results[0].document.id == "doc2"  # Index 1, higher score
-        assert results[0].rerank_score == 0.92
-        assert results[0].new_rank == 1
-        assert results[0].reranker_used == "cohere"
-
-        assert results[1].document.id == "doc1"  # Index 0, lower score
-        assert results[1].rerank_score == 0.88
-        assert results[1].new_rank == 2
-
-    @pytest.mark.asyncio
-    async def test_rerank_no_client(
-        self: Any, sample_documents: List[RetrievalResult]
-    ) -> None:
-        """Test Cohere reranking without initialized client."""
-        config = RerankConfig()
-        reranker = CohereReranker(config, api_key=None)
-
-        with pytest.raises(RuntimeError, match="Cohere API client not initialized"):
-            await reranker.rerank("query", sample_documents)
-
-    @pytest.mark.asyncio
-    async def test_rerank_empty_documents(self: Any) -> None:
-        """Test Cohere reranking with empty document list."""
-        config = RerankConfig()
-        reranker = CohereReranker(config, api_key="test-key")
-        reranker.client = MagicMock()
-
-        results = await reranker.rerank("query", [])
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_rerank_with_long_content(
-        self: Any, sample_documents: List[RetrievalResult]
-    ) -> None:
-        """Test Cohere reranking with content truncation."""
-        config = RerankConfig()
-
-        # Create document with very long content
-        long_doc = Document(
-            id="long_doc", content="Very long content. " * 500
-        )  # >4000 chars
-        long_result = RetrievalResult(
-            document=long_doc, score=0.8, rank=1, retrieval_method="dense"
-        )
-
-        mock_result = MagicMock()
-        mock_result.index = 0
-        mock_result.relevance_score = 0.85
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-
-        reranker = CohereReranker(config, api_key="test-key")
-        reranker.client = mock_client
-
-        results = await reranker.rerank("query", [long_result], top_n=1)
-
-        assert len(results) == 1
-        # Verify content was truncated
-        call_args = mock_client.rerank.call_args[1]["documents"]
-        assert len(call_args[0]) <= 4003  # 4000 chars + "..."
-
-    def test_get_model_info(self: Any) -> None:
-        """Test getting Cohere reranker model information."""
-        config = RerankConfig(
-            cohere_model="rerank-english-v3.0",
-            cohere_max_chunks_per_doc=2,
-            cohere_return_documents=False,
-        )
-        reranker = CohereReranker(config, api_key="test-key")
-        reranker.client = MagicMock()
-
-        info = reranker.get_model_info()
-
-        assert info["type"] == "cohere"
-        assert info["model_name"] == "rerank-english-v3.0"
-        assert info["max_chunks_per_doc"] == 2
-        assert info["return_documents"] is False
-        assert info["api_key_configured"] is True
-
-
 class TestRerankingService:
     """Test main reranking service."""
 
@@ -534,32 +359,21 @@ class TestRerankingService:
         service = RerankingService(config, cohere_api_key=None)
 
         assert service.bge_reranker is not None
-        assert service.cohere_reranker is None
         assert service._fallback_enabled is False
 
-    def test_initialization_cohere_only(self: Any) -> None:
-        """Test service initialization with Cohere reranker only."""
-        config = RerankConfig(local_enabled=False, cohere_enabled=True)
-        service = RerankingService(config, cohere_api_key="test-key")
-
-        assert service.bge_reranker is None
-        assert service.cohere_reranker is not None
-        assert service._fallback_enabled is True
-
-    def test_initialization_both_enabled(self: Any) -> None:
-        """Test service initialization with both rerankers enabled."""
+    def test_initialization_cohere_warning(self: Any) -> None:
+        """Test service initialization logs warning for Cohere configuration."""
         config = RerankConfig(local_enabled=True, cohere_enabled=True)
         service = RerankingService(config, cohere_api_key="test-key")
 
         assert service.bge_reranker is not None
-        assert service.cohere_reranker is not None
-        assert service._fallback_enabled is True
+        assert service._fallback_enabled is False
 
     @pytest.mark.asyncio
     async def test_initialize_service(self: Any) -> None:
         """Test service initialization."""
-        config = RerankConfig(local_enabled=True, cohere_enabled=True)
-        service = RerankingService(config, cohere_api_key="test-key")
+        config = RerankConfig(local_enabled=True)
+        service = RerankingService(config)
 
         # Mock BGE initialization
         service.bge_reranker = MagicMock()
@@ -570,12 +384,12 @@ class TestRerankingService:
         service.bge_reranker.initialize.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_rerank_prefer_local_success(
+    async def test_rerank_success(
         self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
-        """Test reranking preferring local reranker (success case)."""
-        config = RerankConfig(local_enabled=True, cohere_enabled=True, top_n=5)
-        service = RerankingService(config, cohere_api_key="test-key")
+        """Test successful BGE reranking."""
+        config = RerankConfig(local_enabled=True, top_n=5)
+        service = RerankingService(config)
 
         # Mock successful BGE reranking
         mock_bge_results = [
@@ -591,7 +405,6 @@ class TestRerankingService:
 
         service.bge_reranker = MagicMock()
         service.bge_reranker.rerank = AsyncMock(return_value=mock_bge_results)
-        service.cohere_reranker = MagicMock()
 
         results = await service.rerank("query", sample_documents, prefer_local=True)
 
@@ -599,52 +412,16 @@ class TestRerankingService:
         service.bge_reranker.rerank.assert_called_once_with(
             "query", sample_documents, 5
         )
-        service.cohere_reranker.rerank.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_rerank_prefer_local_fallback(
-        self: Any, sample_documents: List[RetrievalResult]
-    ) -> None:
-        """Test reranking with local failure and Cohere fallback."""
-        config = RerankConfig(local_enabled=True, cohere_enabled=True, top_n=5)
-        service = RerankingService(config, cohere_api_key="test-key")
-
-        # Mock BGE failure and Cohere success
-        mock_cohere_results = [
-            RerankResult(
-                document=sample_documents[0].document,
-                original_score=0.9,
-                rerank_score=0.92,
-                original_rank=1,
-                new_rank=1,
-                reranker_used="cohere",
-            )
-        ]
-
-        service.bge_reranker = MagicMock()
-        service.bge_reranker.rerank = AsyncMock(side_effect=Exception("BGE failed"))
-        service.cohere_reranker = MagicMock()
-        service.cohere_reranker.rerank = AsyncMock(return_value=mock_cohere_results)
-
-        results = await service.rerank("query", sample_documents, prefer_local=True)
-
-        assert results == mock_cohere_results
-        service.bge_reranker.rerank.assert_called_once_with(
-            "query", sample_documents, 5
-        )
-        service.cohere_reranker.rerank.assert_called_once_with(
-            "query", sample_documents, 5
-        )
 
     @pytest.mark.asyncio
     async def test_rerank_no_rerankers_available(
         self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
-        """Test reranking with no rerankers available."""
-        config = RerankConfig(local_enabled=False, cohere_enabled=False)
-        service = RerankingService(config, cohere_api_key=None)
+        """Test reranking with no local reranker available."""
+        config = RerankConfig(local_enabled=False)
+        service = RerankingService(config)
 
-        with pytest.raises(RuntimeError, match="No rerankers available"):
+        with pytest.raises(RuntimeError, match="No local BGE reranker available"):
             await service.rerank("query", sample_documents)
 
     @pytest.mark.asyncio
@@ -669,25 +446,15 @@ class TestRerankingService:
         )
 
     @pytest.mark.asyncio
-    async def test_rerank_by_method_cohere(
+    async def test_rerank_by_method_cohere_not_supported(
         self: Any, sample_documents: List[RetrievalResult]
     ) -> None:
-        """Test reranking by specific method (Cohere)."""
-        config = RerankConfig(cohere_enabled=True, top_n=4)
-        service = RerankingService(config, cohere_api_key="test-key")
+        """Test reranking by Cohere method (not supported in local-only mode)."""
+        config = RerankConfig(local_enabled=True)
+        service = RerankingService(config)
 
-        mock_results = [MagicMock()]
-        service.cohere_reranker = MagicMock()
-        service.cohere_reranker.rerank = AsyncMock(return_value=mock_results)
-
-        results = await service.rerank_by_method(
-            "query", sample_documents, method="cohere"
-        )
-
-        assert results == mock_results
-        service.cohere_reranker.rerank.assert_called_once_with(
-            "query", sample_documents, 4
-        )
+        with pytest.raises(ValueError, match="Cohere reranker not supported"):
+            await service.rerank_by_method("query", sample_documents, method="cohere")
 
     @pytest.mark.asyncio
     async def test_rerank_by_method_unavailable(
@@ -715,45 +482,38 @@ class TestRerankingService:
 
     def test_get_available_methods(self: Any) -> None:
         """Test getting available reranking methods."""
-        # BGE only
-        config1 = RerankConfig(local_enabled=True, cohere_enabled=False)
+        # BGE only (local-only mode)
+        config1 = RerankConfig(local_enabled=True)
         service1 = RerankingService(config1)
         assert service1.get_available_methods() == ["bge_local"]
 
-        # Cohere only
-        config2 = RerankConfig(local_enabled=False, cohere_enabled=True)
-        service2 = RerankingService(config2, cohere_api_key="test-key")
-        assert service2.get_available_methods() == ["cohere"]
-
-        # Both
-        config3 = RerankConfig(local_enabled=True, cohere_enabled=True)
-        service3 = RerankingService(config3, cohere_api_key="test-key")
-        assert set(service3.get_available_methods()) == {"bge_local", "cohere"}
+        # No local reranker
+        config2 = RerankConfig(local_enabled=False)
+        service2 = RerankingService(config2)
+        assert service2.get_available_methods() == []
 
     def test_get_service_info(self: Any) -> None:
         """Test getting service information."""
         config = RerankConfig(
             local_enabled=True,
-            cohere_enabled=True,
             top_n=5,
             score_threshold=0.7,
         )
-        service = RerankingService(config, cohere_api_key="test-key")
+        service = RerankingService(config)
 
         # Mock reranker info
         service.bge_reranker = MagicMock()
         service.bge_reranker.get_model_info.return_value = {"type": "bge_local"}
-        service.cohere_reranker = MagicMock()
-        service.cohere_reranker.get_model_info.return_value = {"type": "cohere"}
 
         info = service.get_service_info()
 
         assert info["available_methods"] == service.get_available_methods()
-        assert info["fallback_enabled"] is True
+        assert info["fallback_enabled"] is False
+        assert info["mode"] == "local_only"
         assert info["config"]["top_n"] == 5
         assert info["config"]["score_threshold"] == 0.7
+        assert info["config"]["cohere_enabled"] is False
         assert info["bge_reranker"] == {"type": "bge_local"}
-        assert info["cohere_reranker"] == {"type": "cohere"}
 
     @pytest.mark.asyncio
     async def test_cleanup(self: Any) -> None:
