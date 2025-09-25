@@ -2,11 +2,10 @@
 Document reranking service with BGE local and Cohere fallback.
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from askme.core.config import RerankConfig
 from askme.retriever.base import Document, RetrievalResult
@@ -191,14 +190,17 @@ class BGEReranker(BaseReranker):
                     )
                 )
 
-            # Sort by rerank score (descending) with stable tie-breaking using original rank
+            # Sort by rerank score (descending) with stable tie-breaking
             rerank_results.sort(key=lambda x: (-x.rerank_score, x.original_rank))
 
             # Update new ranks and apply top_n filtering
             for i, result in enumerate(rerank_results):
                 result.new_rank = i + 1
                 # Preserve original rank info for debugging and consistency
-                if "original_rank_preserved" not in result.debug_info:
+                if (
+                    result.debug_info is not None
+                    and "original_rank_preserved" not in result.debug_info
+                ):
                     result.debug_info["original_rank_preserved"] = result.original_rank
 
             # Apply score threshold if configured
@@ -293,10 +295,11 @@ class BGEReranker(BaseReranker):
                 )
 
                 logger.debug(
-                    f"Token-based truncation: {len(content_tokens)} → {len(truncated_tokens)} tokens"
+                    f"Token-based truncation: {len(content_tokens)} → "
+                    f"{len(truncated_tokens)} tokens"
                 )
 
-                return truncated_content
+                return str(truncated_content)
 
         except Exception as e:
             logger.debug(
@@ -304,7 +307,7 @@ class BGEReranker(BaseReranker):
             )
 
         # Fallback: Enhanced character-based approximation
-        return self._fallback_char_truncation(content, query, max_length)
+        return str(self._fallback_char_truncation(content, query, max_length))
 
     def _fallback_char_truncation(
         self, content: str, query: str, max_length: int
@@ -364,7 +367,8 @@ class BGEReranker(BaseReranker):
 
         logger.debug(
             f"Char-based truncation: {content_chars} → {len(truncated)} chars "
-            f"(est. {estimated_content_tokens} → {estimate_token_count(truncated)} tokens)"
+            f"(est. {estimated_content_tokens} → "
+            f"{estimate_token_count(truncated)} tokens)"
         )
 
         return truncated
@@ -385,8 +389,8 @@ class RerankingService:
         # Cohere removed - warn if configuration still references it
         if config.cohere_enabled or cohere_api_key:
             logger.warning(
-                "Cohere reranker configuration detected but not supported in local-only mode. "
-                "Only BGE local reranker will be used."
+                "Cohere reranker configuration detected but not supported "
+                "in local-only mode. Only BGE local reranker will be used."
             )
 
         self._fallback_enabled = False  # No cloud fallback in local-only mode

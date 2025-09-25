@@ -145,7 +145,7 @@ class MilvusRetriever(VectorRetriever):
             # Sparse vector index for BM25 search using optimal metric type
             sparse_index_params = {
                 "index_type": "SPARSE_INVERTED_INDEX",
-                "metric_type": "BM25",  # BM25 is optimized for full-text search on sparse vectors
+                "metric_type": "BM25",  # BM25 optimized for full-text search
                 "params": {},
             }
             collection.create_index(
@@ -181,7 +181,8 @@ class MilvusRetriever(VectorRetriever):
             batches = self._create_optimal_batches(documents)
 
             logger.info(
-                f"Inserting {len(documents)} documents in {len(batches)} optimized batches"
+                f"Inserting {len(documents)} documents in "
+                f"{len(batches)} optimized batches"
             )
 
             for batch_idx, batch_docs in enumerate(batches):
@@ -221,7 +222,8 @@ class MilvusRetriever(VectorRetriever):
                 self.collection.flush()
 
             logger.info(
-                f"Successfully upserted {len(documents)} documents into {self.collection_name}"
+                f"Successfully upserted {len(documents)} documents into "
+                f"{self.collection_name}"
             )
 
             return all_inserted_ids
@@ -239,7 +241,7 @@ class MilvusRetriever(VectorRetriever):
         MIN_BATCH_SIZE = 10  # Minimum batch size to avoid too many tiny batches
 
         batches = []
-        current_batch = []
+        current_batch: List[Document] = []
         current_size_mb = 0.0
 
         for doc in documents:
@@ -314,9 +316,9 @@ class MilvusRetriever(VectorRetriever):
             # Filter out non-numeric scores (e.g., mock objects)
             numeric_scores = [s for s in all_scores if isinstance(s, (int, float))]
             if numeric_scores:
-                return f"{min(numeric_scores):.4f}-{max(numeric_scores):.4f}"
+                return f"{min(numeric_scores): .4f}-{max(numeric_scores): .4f}"
             else:
-                return f"{current_score:.4f}-{current_score:.4f}"
+                return f"{current_score: .4f}-{current_score: .4f}"
         except (TypeError, AttributeError, ValueError):
             return "mock-mock"
 
@@ -360,6 +362,8 @@ class MilvusRetriever(VectorRetriever):
                     )
 
                     try:
+                        if self.collection is None:
+                            raise RuntimeError("Collection not initialized")
                         existing_results = self.collection.query(
                             expr=id_expr, output_fields=["id"], limit=batch_size
                         )
@@ -375,6 +379,8 @@ class MilvusRetriever(VectorRetriever):
                     f"Deleting {len(existing_ids)} existing documents before upsert"
                 )
                 try:
+                    if self.collection is None:
+                        raise RuntimeError("Collection not initialized")
                     delete_expr = (
                         "id in [" + ",".join(f'"{id_}"' for id_ in existing_ids) + "]"
                     )
@@ -386,6 +392,8 @@ class MilvusRetriever(VectorRetriever):
                     # Continue with upsert anyway
 
             # Step 3: Perform clean insert
+            if self.collection is None:
+                raise RuntimeError("Collection not initialized")
             result = self.collection.upsert(data)
 
             # Return document IDs as strings
@@ -398,6 +406,8 @@ class MilvusRetriever(VectorRetriever):
             logger.error(f"Safe upsert failed: {e}")
             # Fallback to simple upsert if safe method fails
             logger.warning("Falling back to simple upsert operation")
+            if self.collection is None:
+                raise RuntimeError("Collection not initialized")
             result = self.collection.upsert(data)
             if hasattr(result, "primary_keys") and result.primary_keys:
                 return [str(pk) for pk in result.primary_keys]
@@ -477,8 +487,9 @@ class MilvusRetriever(VectorRetriever):
             # Enhanced logging with performance metrics
             logger.info(
                 f"Dense search completed: {len(retrieval_results)}/{topk} results, "
-                f"search={search_operation_time:.1f}ms, processing={processing_time:.1f}ms, "
-                f"total={total_time:.1f}ms, ef={optimal_ef}"
+                f"search={search_operation_time: .1f}ms, "
+                f"processing={processing_time: .1f}ms, "
+                f"total={total_time: .1f}ms, ef={optimal_ef}"
             )
 
             if filters:
@@ -488,7 +499,7 @@ class MilvusRetriever(VectorRetriever):
 
         except Exception as e:
             search_time = (time.perf_counter() - search_start) * 1000
-            logger.error(f"Dense search failed after {search_time:.1f}ms: {e}")
+            logger.error(f"Dense search failed after {search_time: .1f}ms: {e}")
             raise
 
     async def sparse_search(
@@ -888,7 +899,8 @@ class MilvusRetriever(VectorRetriever):
         }
 
         logger.info(
-            f"Optimized HNSW params for dim={dimension}: M={M}, efConstruction={efConstruction}"
+            f"Optimized HNSW params for dim={dimension}: M={M}, "
+            f"efConstruction={efConstruction}"
         )
 
         return params
@@ -1054,7 +1066,7 @@ class MilvusRetriever(VectorRetriever):
             stats_time = (time.perf_counter() - stats_start) * 1000
             stats["performance"]["stats_collection_time_ms"] = round(stats_time, 2)
 
-            logger.debug(f"Collection stats collected in {stats_time:.1f}ms")
+            logger.debug(f"Collection stats collected in {stats_time: .1f}ms")
             return stats
 
         except Exception as e:
