@@ -541,9 +541,9 @@ async def retrieve_documents(
                     start=0,
                     end=min(200, len(r.document.content)),
                     score=normalized_score,
-                    raw_score=raw_score
-                    if raw_score > 1.0
-                    else None,  # Only store if needed
+                    raw_score=(
+                        raw_score if raw_score > 1.0 else None
+                    ),  # Only store if needed
                     metadata=r.document.metadata,
                 )
             )

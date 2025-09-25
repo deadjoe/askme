@@ -449,9 +449,9 @@ async def run_evaluation(
                         name=name,
                         value=float(sanitized),
                         threshold=threshold,
-                        passed=(sanitized >= threshold)
-                        if threshold is not None
-                        else True,
+                        passed=(
+                            (sanitized >= threshold) if threshold is not None else True
+                        ),
                         details=ragas_details,
                     )
                 )
@@ -563,9 +563,9 @@ async def run_evaluation(
                     name=s.name,
                     value=s.value,
                     threshold=s.threshold,
-                    passed=(s.value >= s.threshold)
-                    if s.threshold is not None
-                    else True,
+                    passed=(
+                        (s.value >= s.threshold) if s.threshold is not None else True
+                    ),
                     details={"samples": request_samples, "note": "heuristic_fallback"},
                 )
             )
