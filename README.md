@@ -56,8 +56,11 @@ uv sync --dev
 # Start vector database (Weaviate)
 docker compose -f docker/docker-compose.yaml --profile weaviate up -d weaviate
 
-# Start API server (development mode)
-ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
+# Start API server using startup script
+./scripts/start-api.sh --skip-heavy-init --reload
+
+# Alternative: Start API server directly
+# ASKME_SKIP_HEAVY_INIT=1 uv run uvicorn askme.api.main:app --port 8080 --reload
 ```
 
 ### Basic Usage
@@ -153,16 +156,139 @@ generation:
   openai_model: gpt-4o-mini
 ```
 
+### Startup Scripts
+
+For convenient development and deployment, use the provided startup and shutdown scripts:
+
+```bash
+# Start API server with custom configuration
+./scripts/start-api.sh --port 8080 --ollama-model qwen3:30b-a3b --vector-backend milvus
+
+# Start with Cohere reranking enabled
+./scripts/start-api.sh --enable-cohere  # Requires COHERE_API_KEY env var
+
+# Quick development start (skip heavy initialization)
+./scripts/start-api.sh --skip-heavy-init --reload
+
+# Show configuration without starting
+./scripts/start-api.sh --dry-run
+
+# Stop API server
+./scripts/stop-api.sh
+
+# Force stop all related processes
+./scripts/stop-api.sh --all --force
+```
+
 ### Environment Variables
 
-- `ASKME_SKIP_HEAVY_INIT=1` - Skip heavy service initialization during development
-- `ASKME_API_URL` / `ASKME_API_KEY` - Target API base URL and optional auth for CLI scripts
-- `ASKME_ENABLE_COHERE=1` + `COHERE_API_KEY` - Enable Cohere reranking
-- `ASKME_ENABLE_OLLAMA=1` - Enable local Ollama generation
-- `ASKME_RAGAS_LLM_MODEL` - Override local LLM judge used for evaluations (default `gpt-oss:20b`)
-- `ASKME_RAGAS_EMBED_MODEL` - Override embedding model for Ragas metrics (default `BAAI/bge-m3`)
-- `ASKME_TRULENS_LLM_MODEL` - Override TruLens evaluation model (falls back to `ASKME_RAGAS_LLM_MODEL`)
-- `OPENAI_BASE_URL` / `OPENAI_API_KEY` - OpenAI-compatible endpoints for evaluation
+All configuration can be overridden using environment variables with the `ASKME_` prefix:
+
+#### Core Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_VECTOR_BACKEND` | `weaviate` | Vector database backend (weaviate/milvus/qdrant) |
+| `ASKME_ENABLE_OLLAMA` | `false` | Enable local Ollama LLM generation |
+| `ASKME_ENABLE_COHERE` | `false` | Enable Cohere reranking service |
+| `ASKME_SKIP_HEAVY_INIT` | `false` | Skip heavy service initialization |
+| `ASKME_LOG_LEVEL` | `INFO` | Log level (DEBUG/INFO/WARNING/ERROR) |
+
+#### Database Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_DATABASE__HOST` | `localhost` | Database host address |
+| `ASKME_DATABASE__PORT` | `19530` | Database port |
+| `ASKME_DATABASE__MILVUS__HOST` | `localhost` | Milvus host address |
+| `ASKME_DATABASE__MILVUS__PORT` | `19530` | Milvus port |
+| `ASKME_DATABASE__MILVUS__USERNAME` | `""` | Milvus username |
+| `ASKME_DATABASE__MILVUS__PASSWORD` | `""` | Milvus password |
+| `ASKME_DATABASE__MILVUS__SECURE` | `false` | Milvus secure connection |
+| `ASKME_DATABASE__MILVUS__COLLECTION_NAME` | `askme_hybrid` | Milvus collection name |
+| `ASKME_DATABASE__WEAVIATE__URL` | `http://localhost:8081` | Weaviate connection URL |
+| `ASKME_DATABASE__WEAVIATE__API_KEY` | `""` | Weaviate API key |
+| `ASKME_DATABASE__WEAVIATE__CLASS_NAME` | `AskmeDocument` | Weaviate class name |
+| `ASKME_DATABASE__QDRANT__URL` | `http://localhost:6333` | Qdrant connection URL |
+| `ASKME_DATABASE__QDRANT__API_KEY` | `""` | Qdrant API key |
+| `ASKME_DATABASE__QDRANT__COLLECTION_NAME` | `askme` | Qdrant collection name |
+
+#### Generation Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_GENERATION__PROVIDER` | `simple` | LLM provider (simple/ollama/openai) |
+| `ASKME_GENERATION__OLLAMA_MODEL` | `llama3.1:latest` | Ollama model name |
+| `ASKME_GENERATION__OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama endpoint URL |
+| `ASKME_GENERATION__MODEL_NAME` | `gpt-4` | Default model name |
+| `ASKME_GENERATION__MAX_TOKENS` | `1500` | Maximum generation tokens |
+| `ASKME_GENERATION__TEMPERATURE` | `0.1` | Generation temperature |
+| `ASKME_GENERATION__TOP_P` | `0.9` | Top-p sampling parameter |
+| `ASKME_GENERATION__OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
+| `ASKME_GENERATION__OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API endpoint |
+| `ASKME_GENERATION__OPENAI_API_KEY_ENV` | `OPENAI_API_KEY` | OpenAI API key env var name |
+
+#### Embedding Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_EMBEDDING__MODEL` | `BAAI/bge-m3` | Embedding model name |
+| `ASKME_EMBEDDING__DIMENSION` | `1024` | Embedding dimension |
+| `ASKME_EMBEDDING__BATCH_SIZE` | `32` | Embedding batch size |
+| `ASKME_EMBEDDING__MAX_LENGTH` | `8192` | Maximum input length |
+| `ASKME_EMBEDDING__NORMALIZE_EMBEDDINGS` | `true` | Normalize embeddings |
+| `ASKME_EMBEDDING__USE_FP16` | `true` | Use FP16 precision |
+
+#### Hybrid Search Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_HYBRID__MODE` | `rrf` | Hybrid search mode (rrf/alpha/relative_score/ranked) |
+| `ASKME_HYBRID__ALPHA` | `0.5` | Alpha fusion parameter (0=sparse, 1=dense) |
+| `ASKME_HYBRID__RRF_K` | `60` | RRF fusion parameter |
+| `ASKME_HYBRID__TOPK` | `50` | Initial retrieval candidates |
+| `ASKME_HYBRID__DENSE_WEIGHT` | `1.0` | Dense search weight |
+| `ASKME_HYBRID__SPARSE_WEIGHT` | `1.0` | Sparse search weight |
+
+#### Reranking Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_RERANK__LOCAL_MODEL` | `BAAI/bge-reranker-v2-m3` | Local reranking model |
+| `ASKME_RERANK__LOCAL_ENABLED` | `true` | Enable local reranking |
+| `ASKME_RERANK__LOCAL_BATCH_SIZE` | `16` | Local reranking batch size |
+| `ASKME_RERANK__COHERE_ENABLED` | `false` | Enable Cohere reranking |
+| `ASKME_RERANK__COHERE_MODEL` | `rerank-3.5-turbo` | Cohere model name |
+| `ASKME_RERANK__TOP_N` | `8` | Final reranked passages |
+
+#### API Server Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_API__HOST` | `0.0.0.0` | API server host |
+| `ASKME_API__PORT` | `8080` | API server port |
+| `ASKME_API__WORKERS` | `1` | Number of worker processes |
+| `ASKME_API__RELOAD` | `false` | Enable hot reload |
+| `ASKME_API__ACCESS_LOG` | `true` | Enable access logging |
+
+#### External Services
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_BASE_URL` | - | OpenAI-compatible API endpoint |
+| `OPENAI_API_KEY` | - | OpenAI API key |
+| `COHERE_API_KEY` | - | Cohere API key (required for Cohere reranking) |
+| `ASKME_RAGAS_LLM_MODEL` | - | Override LLM model for Ragas evaluation |
+| `ASKME_RAGAS_EMBED_MODEL` | `BAAI/bge-m3` | Override embedding model for Ragas |
+
+#### Performance & Monitoring
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE` | `32` | Embedding batch size |
+| `ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE` | `16` | Reranking batch size |
+| `ASKME_PERFORMANCE__TIMEOUTS__RETRIEVAL_TIMEOUT` | `15` | Retrieval timeout (seconds) |
+| `ASKME_PERFORMANCE__TIMEOUTS__RERANK_TIMEOUT` | `30` | Reranking timeout (seconds) |
+| `ASKME_PERFORMANCE__TIMEOUTS__GENERATION_TIMEOUT` | `60` | Generation timeout (seconds) |
+
+#### Development & Testing
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_SKIP_HEAVY_INIT` | `false` | Skip heavy service initialization |
+| `ASKME_OLLAMA_READ_TIMEOUT` | `120` | Ollama read timeout (seconds) |
+| `ASKME_OLLAMA_THINKING` | `false` | Enable Ollama thinking mode |
+| `TOKENIZERS_PARALLELISM` | - | Control tokenizers parallelism |
 
 ## API Reference
 
