@@ -20,7 +20,7 @@ import httpx
 
 from askme.core.config import GenerationConfig
 
-# OpenAI client是可选依赖，这里延迟导入并在缺失时提供显式错误
+# OpenAI client is optional dependency, lazy import with explicit error handling
 try:  # pragma: no cover - import guard
     _openai_module = importlib.import_module("openai")
     OpenAI: Any = getattr(_openai_module, "OpenAI")
@@ -73,17 +73,17 @@ class SimpleTemplateGenerator(BaseGenerator):
         for p in top_passages:
             bullets.append(f"- [{p.doc_id}: {p.title}]")
 
-        # Keep English template because相关用例断言英文关键字
+        # Keep English template because test cases assert English keywords
         summary = (
             "Summary: Constructed from retrieved passages."
             if not lang_is_cn
-            else "摘要：基于检索段落的简要概述。"
+            else "Summary: Brief overview from retrieved passages."
         )
-        sources_header = "Sources:" if not lang_is_cn else "参考来源："
+        sources_header = "Sources:" if not lang_is_cn else "Sources:"
         header = (
             "Answer (constructed from top passages)"
             if not lang_is_cn
-            else "基于最相关段落构建的回答"
+            else "Answer constructed from most relevant passages"
         )
 
         id_refs = ", ".join([f"[{p.doc_id}]" for p in top_passages])
@@ -103,7 +103,10 @@ class SimpleTemplateGenerator(BaseGenerator):
                 "consider exploring adjacent chapters."
             )
         else:
-            lines.append("目前的片段未直接列出具体名单，如需确认，可进一步检索相近章节。")
+            lines.append(
+                "The current snippets do not list explicit names; "
+                "consider exploring adjacent chapters."
+            )
 
         return "\n".join([ln for ln in lines if ln])
 
@@ -135,8 +138,8 @@ class LocalOllamaGenerator(BaseGenerator):
                 r"我需要.*?分析.*?(?=\n|\s|$)",  # Analysis patterns
                 r"首先.*?考虑.*?(?=\n|\s|$)",  # First consider patterns
                 r"标签中.*?说明.*?(?=\n|\s|$)",  # Tag explanation patterns
-                r"首先，.*?(?=\n\n|\n[^我让但])",  # Starting with 首先，
-                r"让我.*?(?=\n\n|\n[^我让但])",  # Starting with 让我
+                r"首先，.*?(?=\n\n|\n[^我让但])",  # Starting with Chinese "first,"
+                r"让我.*?(?=\n\n|\n[^我让但])",  # Starting with Chinese "let me"
                 r"我的回答应该是.*?(?=\n\n|\n[^我让但])",  # My answer should be
                 r"但根据要求.*?(?=\n\n|\n[^我让但])",  # But according to requirements
                 r"所以，我.*?(?=\n\n|\n[^我让但])",  # So, I...
@@ -168,13 +171,13 @@ class LocalOllamaGenerator(BaseGenerator):
                 + self.config.user_prompt_template.format(
                     context=context, question=question
                 )
-                + "\n\n请详细回答，要求：\n"
-                + "1. 基于上下文提供完整、详细的答案\n"
-                + "2. 整合多个相关段落的信息，给出全面回答\n"
-                + "3. 答案中不要包含文档ID引用，纯文本回答即可\n"
-                + "4. 如果信息不足，说明原因\n"
-                + "5. 答案要有逻辑层次，便于阅读理解\n"
-                + "6. 回答内容要有清晰的段落分隔"
+                + "\n\nPlease provide a detailed answer with:\n"
+                + "1. Complete and detailed response based on context\n"
+                + "2. Integrate information from multiple relevant passages\n"
+                + "3. No document ID references, plain text answer only\n"
+                + "4. If information is insufficient, explain why\n"
+                + "5. Logical structure for easy reading\n"
+                + "6. Clear paragraph separation"
             )
 
         async def call_ollama(
@@ -277,11 +280,11 @@ class LocalOllamaGenerator(BaseGenerator):
 
                 # Remove excessive meta-commentary while preserving content
                 excessive_patterns = [
-                    # Remove "首先，我需要..." starters
+                    # Remove Chinese "first, I need..." starters
                     r"^首先，我需要.*?。\s*",
-                    # Remove "让我..." starters
+                    # Remove Chinese "let me..." starters
                     r"^让我.*?。\s*",
-                    # Remove "我需要..." starters
+                    # Remove Chinese "I need..." starters
                     r"^我需要.*?。\s*",
                 ]
                 for pattern in excessive_patterns:
@@ -298,7 +301,7 @@ class LocalOllamaGenerator(BaseGenerator):
             logger.warning("Ollama returned empty response: {}", data)
             raise RuntimeError("ollama-empty-response")
 
-        # primary attempt uses最多 8 段上下文，若失败再尝试仅保留最相关的 3 段
+        # Primary attempt with up to 8 passages, fallback to top 3 if needed
         attempts: List[Dict[str, Any]] = [
             {"passages": passages[:8], "options": {}},
         ]
@@ -323,7 +326,7 @@ class LocalOllamaGenerator(BaseGenerator):
                     exc,
                 )
 
-        # 如果全部尝试失败，回退到简单模板生成，避免抛出异常
+        # If all attempts fail, fallback to simple template to avoid exceptions
         st = SimpleTemplateGenerator(self.config)
         return await st.generate(question, passages)
 
