@@ -304,7 +304,7 @@ async def query_documents(
 
         debug_info = None
         if req.include_debug:
-            # 真实统计 dense-only 与 BM25-only 的 topK 命中（以原始 query 近似）
+            # Real stats for dense vs BM25 topK hits (approx with original query)
             bm25_hits = 0
             dense_hits = 0
             overlap_hits = 0
@@ -317,7 +317,7 @@ async def query_documents(
                     q0_emb["sparse_embedding"], topk=req.topk, filters=req.filters
                 )
                 if not sparse_only:
-                    # Weaviate 走 alpha 极值近似 BM25-only / dense-only
+                    # Weaviate uses alpha extremes to approximate BM25-only / dense-only
                     w_params_dense = HybridSearchParams(
                         alpha=1.0,
                         use_rrf=False,
@@ -440,7 +440,7 @@ async def query_documents(
             error=locals().get("pipeline_error_msg"),
         )
 
-    # 若真实流程失败，仍尽量调用已配置的 generator 生成答案，便于本地快速联调（如 Ollama ）
+    # If real flow fails, try configured generator for local debugging (e.g., Ollama)
     try:
         if request is not None:
             app = request.app

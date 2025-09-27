@@ -483,9 +483,9 @@ class DocumentChunker:
             if len(chunk.strip()) >= self.config.min_chunk_size:
                 chunks.append(chunk.strip())
 
-            # Move start position with overlap（在极端 overlap>=chunk_size 时保持前进防止卡死）
+            # Move start position with overlap (prevent infinite loop when >= size)
             if self.config.chunk_overlap >= self.config.chunk_size:
-                start = end  # 无法重叠，直接顺移
+                start = end  # Cannot overlap, move directly forward
             else:
                 start = max(end - self.config.chunk_overlap, start + 1)
 

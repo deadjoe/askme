@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from askme.core.config import RerankConfig
 from askme.retriever.base import Document, RetrievalResult
 
-# 可选依赖：按需延迟导入，避免在未安装环境下阻塞其它功能
+# Optional dependency: lazy import to avoid blocking other features when not installed
 _np: Any
 try:
     import numpy as _np_module
@@ -80,10 +80,10 @@ class BGEReranker(BaseReranker):
         try:
             logger.info(f"Loading BGE reranker: {self.config.local_model}")
 
-            # 延迟导入模型，以减少未安装依赖时的导入错误
+            # Lazy import model to reduce import errors when dependencies missing
             from FlagEmbedding import FlagReranker
 
-            # Load BGE reranker model；若遇到 trust_remote_code 提示，回退到基础模型
+            # Load BGE reranker model; fallback on trust_remote_code issues
             try:
                 self.model = FlagReranker(
                     self.config.local_model,
