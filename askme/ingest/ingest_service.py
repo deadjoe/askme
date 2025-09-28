@@ -581,13 +581,8 @@ class IngestionService:
                 logger.error(f"Failed to insert document batch: {e}")
                 raise
 
-            # Yield control and add backpressure management
-            await asyncio.sleep(0.01)  # Small delay for backpressure
-
-            # Optional: Check if we should slow down based on system load
-            # This could be expanded with more sophisticated backpressure
-            if (i + batch_size) % (batch_size * 10) == 0:  # Every 10 batches
-                await asyncio.sleep(0.1)  # Longer pause every 10 batches
+            # Yield control without imposing artificial delay
+            await asyncio.sleep(0)
 
     async def get_task_status(self, task_id: str) -> Optional[IngestionTask]:
         """Get the status of an ingestion task."""
