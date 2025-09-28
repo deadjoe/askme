@@ -232,7 +232,7 @@ def run_ragas(
         print(f"DEBUG: Final traceback: {traceback.format_exc()}")
         raise RuntimeError(f"Ragas initialization failed: {e}") from e
 
-    # Configure本地 provider：优先使用本地 embedding + Ollama LLM，如失败按需降级
+    # Configure local provider: prioritize local embedding + Ollama, fallback as needed
     llm = None
     emb = None
     try:
@@ -297,8 +297,8 @@ def run_ragas(
     a = [s.get("answer", "") for s in samples]
     ctx = [s.get("contexts", []) for s in samples]
     gt = [s.get("ground_truths", []) for s in samples]
-    # Ragas>=0.2 有些指标（如 context_precision）期望列名 `reference`
-    # 这里用首个 ground_truth 作为 reference（若存在）
+    # Ragas>=0.2 some metrics (like context_precision) expect column name `reference`
+    # Use first ground_truth as reference (if exists)
     ref = [(g[0] if isinstance(g, list) and g else "") for g in gt]
 
     # Prefer passing explicit providers when available

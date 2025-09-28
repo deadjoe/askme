@@ -14,7 +14,7 @@ import numpy as np
 
 from askme.core.config import EmbeddingConfig
 
-# 抑制 tokenizer 的性能警告
+# Suppress tokenizer performance warnings
 warnings.filterwarnings(
     "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
 )
@@ -42,7 +42,7 @@ class BGEEmbeddingService:
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.model: Any | None = None
-        # 允许在未安装 torch 的环境下工作（跳过 GPU 检测）
+        # Allow operation without torch installed (skip GPU detection)
         has_cuda = False
         if torch_module is not None and hasattr(torch_module, "cuda"):
             cuda_mod = getattr(torch_module, "cuda")
@@ -130,10 +130,26 @@ class BGEEmbeddingService:
                     self.config.max_length,
                 )
 
+                # Debug: Log available keys in batch_results
+                logger.info(f"BGE-M3 batch_results keys: {list(batch_results.keys())}")
+
                 # Process results
                 for j, text in enumerate(batch_texts):
                     dense_embedding = batch_results["dense_vecs"][j]
-                    sparse_embedding = batch_results["sparse_vecs"][j]
+
+                    # Handle sparse vectors with fallback
+                    if "sparse_vecs" in batch_results:
+                        sparse_embedding = batch_results["sparse_vecs"][j]
+                    elif "lexical_weights" in batch_results:
+                        # Alternative key name for sparse vectors in BGE-M3 versions
+                        sparse_embedding = batch_results["lexical_weights"][j]
+                    else:
+                        # Fallback: create empty sparse embedding
+                        logger.warning(
+                            f"No sparse vectors found in BGE-M3 output, "
+                            f"available keys: {list(batch_results.keys())}"
+                        )
+                        sparse_embedding = []
 
                     # Normalize dense embedding if configured
                     if self.config.normalize_embeddings:
@@ -161,7 +177,7 @@ class BGEEmbeddingService:
             raise
 
     def _require_model(self) -> Any:
-        """确保内置模型已初始化并返回实例。"""
+        """Ensure built-in model is initialized and return instance."""
         if self.model is None:
             raise RuntimeError("Embedding model not initialized")
         return self.model
@@ -179,7 +195,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -193,7 +208,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -207,7 +221,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=False,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -221,12 +234,11 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
     def _extract_dense_vector(self, result: Dict[str, Any]) -> List[float]:
-        """从模型返回结果中提取一维 dense embedding。"""
+        """Extract 1D dense embedding from model results."""
         vec_data = result.get("dense_vecs")
         if vec_data is None:
             vec_data = result.get("dense_vectors")
@@ -344,7 +356,7 @@ class BGEEmbeddingService:
             dense_values = self._extract_dense_vector(results)
             dense_array = np.array(dense_values, dtype=float)
 
-            # 兼容无 sparse_vecs 的形态（如仅返回 lexical_weights 或未返回稀疏向量）
+            # Handle cases without sparse_vecs (lexical_weights only or no sparse)
             sparse_embedding_raw: Any = {}
             sparse_vecs = results.get("sparse_vecs")
             if isinstance(sparse_vecs, list) and sparse_vecs:

@@ -235,6 +235,37 @@ class SearchFusion:
         dense_norm = normalize_scores(dense_results)
         sparse_norm = normalize_scores(sparse_results)
 
+        # Handle edge case where one result set is empty
+        if not dense_norm and not sparse_norm:
+            return []
+        elif not dense_norm:
+            # Only sparse results available, return them with adjusted scores
+            return [
+                RetrievalResult(
+                    document=r.document,
+                    score=(1 - alpha) * r.score,  # Apply sparse weighting
+                    rank=r.rank,
+                    retrieval_method="alpha_fusion_sparse_only",
+                    debug_info={
+                        "alpha": alpha,
+                        "combined_score": (1 - alpha) * r.score,
+                    },
+                )
+                for r in sparse_norm
+            ]
+        elif not sparse_norm:
+            # Only dense results available, return them with adjusted scores
+            return [
+                RetrievalResult(
+                    document=r.document,
+                    score=alpha * r.score,  # Apply dense weighting
+                    rank=r.rank,
+                    retrieval_method="alpha_fusion_dense_only",
+                    debug_info={"alpha": alpha, "combined_score": alpha * r.score},
+                )
+                for r in dense_norm
+            ]
+
         # Create combined score mapping
         doc_scores = {}
         doc_objects = {}
