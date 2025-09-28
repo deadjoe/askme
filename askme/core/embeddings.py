@@ -195,7 +195,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -209,7 +208,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -223,7 +221,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=False,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
@@ -237,7 +234,6 @@ class BGEEmbeddingService:
                 max_length=max_length,
                 return_dense=True,
                 return_sparse=True,
-                return_colbert_vecs=False,
             ),
         )
 
