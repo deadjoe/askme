@@ -142,7 +142,9 @@ find_askme_processes() {
     done < <(pgrep -f "uv run.*askme" 2>/dev/null || true)
 
     # Deduplicate and return
-    printf '%s\n' "${processes[@]}" | sort -n | uniq 2>/dev/null || true
+    if [[ ${#processes[@]} -gt 0 ]]; then
+        printf '%s\n' "${processes[@]}" | sort -n | uniq 2>/dev/null || true
+    fi
 }
 
 # Get process detailed information
@@ -301,12 +303,14 @@ show_target_processes() {
     echo "🎯 Found ${#processes[@]} related processes:"
     echo "   ┌─────────────────────────────────────────────────────────────────────┐"
 
-    for pid in "${processes[@]}"; do
-        if [[ -n "$pid" ]] && process_exists "$pid"; then
-            local info=$(get_process_info "$pid")
-            printf "   │ %-67s │\n" "$info"
-        fi
-    done
+    if [[ ${#processes[@]} -gt 0 ]]; then
+        for pid in "${processes[@]}"; do
+            if [[ -n "$pid" ]] && process_exists "$pid"; then
+                local info=$(get_process_info "$pid")
+                printf "   │ %-67s │\n" "$info"
+            fi
+        done
+    fi
 
     echo "   └─────────────────────────────────────────────────────────────────────┘"
     echo
@@ -339,10 +343,11 @@ stop_processes() {
 
     log INFO "Starting to stop ${#processes[@]} processes..."
 
-    for pid in "${processes[@]}"; do
-        if [[ -z "$pid" ]] || ! process_exists "$pid"; then
-            continue
-        fi
+    if [[ ${#processes[@]} -gt 0 ]]; then
+        for pid in "${processes[@]}"; do
+            if [[ -z "$pid" ]] || ! process_exists "$pid"; then
+                continue
+            fi
 
         local cmd=$(ps -p "$pid" -o command= 2>/dev/null | cut -c1-50 || echo "Unknown")
         local process_name="$cmd"
@@ -370,7 +375,8 @@ stop_processes() {
                 fi
             fi
         fi
-    done
+        done
+    fi
 
     log INFO "Stop operation completed: successfully stopped $stopped_count processes"
     if [[ $failed_count -gt 0 ]]; then
@@ -419,7 +425,7 @@ main() {
 
     # Confirm operation (unless force mode or no processes to stop)
     local processes=($(find_askme_processes))
-    if [[ ${#processes[@]} -gt 0 && "$FORCE" != "true" && -t 0 ]]; then
+    if [[ ${#processes[@]} -gt 0 && "$FORCE" != "true" && -t 0 && -t 1 ]]; then
         echo -n "Confirm stopping the above processes? [y/N] "
         read -r confirm
         if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
