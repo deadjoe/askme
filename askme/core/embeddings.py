@@ -74,7 +74,7 @@ class BGEEmbeddingService:
             self.model = BGEM3FlagModel(
                 self.config.model,
                 use_fp16=(self.device != "cpu" and self.config.use_fp16),
-                device=self.device,
+                devices=self.device,
             )
 
             self._is_initialized = True
