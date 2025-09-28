@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             }
             retriever = MilvusRetriever(retriever_cfg)
 
-        # Cohere 启用逻辑统一：允许通过 config 或环境变量开启；实际仅当提供 API Key 时启用
+        # Unified Cohere logic: enable via config or env var, only when API key provided
         enable_cohere_env = os.getenv("ASKME_ENABLE_COHERE", "0") in {
             "1",
             "true",
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             if (enable_cohere_env or settings.rerank.cohere_enabled)
             else None
         )
-        # 若检测到 API Key，则强制打开 rerank.cohere_enabled；否则关闭以避免误报可用
+        # Force enable cohere_enabled if API key detected, disable otherwise
         try:
             settings.rerank.cohere_enabled = cohere_api_key is not None
         except Exception:
@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error(f"Failed to initialize askme components: {e}")
         raise
 
-    # Eager initialize heavy services so真实路径可用；允许通过环境变量跳过以便本地快速起动
+    # Eager initialize heavy services; allow env var skip for fast startup
     skip_heavy = os.getenv("ASKME_SKIP_HEAVY_INIT", "0") in {"1", "true", "True"}
     if not skip_heavy:
         try:
@@ -195,8 +195,8 @@ def create_app() -> FastAPI:
 
     # Configure CORS
     if settings.api.cors.allow_origins:
-        # Starlette 的类型标注对 add_middleware 的 kwargs 较严格，
-        # 使用 cast(Any, app) 以匹配运行时签名并避免类型误报。
+        # Starlette's type annotations are strict for add_middleware kwargs,
+        # use cast(Any, app) to match runtime signature and avoid type errors.
         cast(Any, app).add_middleware(
             CORSMiddleware,
             allow_origins=settings.api.cors.allow_origins,

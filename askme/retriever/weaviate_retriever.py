@@ -104,7 +104,7 @@ class WeaviateRetriever(VectorRetriever):
                 for c in existing_raw
             ]
             if self.class_name not in existing:
-                # 显式配置向量索引（HNSW + 选定距离度量），避免依赖服务端默认
+                # Explicitly configure vector index (HNSW + distance) to avoid defaults
                 self.client.collections.create(
                     name=self.class_name,
                     properties=[
@@ -260,8 +260,12 @@ class WeaviateRetriever(VectorRetriever):
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[RetrievalResult]:
         # Weaviate BM25 expects a raw text query; we cannot reconstruct
-        # from sparse terms reliably. Use empty result to avoid misleading
-        # behavior; hybrid() path should be preferred.
+        # from sparse terms reliably. Log warning and return empty result.
+        # Hybrid search with original_query should be used instead.
+        logger.warning(
+            "Weaviate sparse_search cannot reconstruct text from sparse terms. "
+            "Use hybrid_search with original_query for BM25 functionality."
+        )
         return []
 
     async def hybrid_search(
@@ -273,6 +277,11 @@ class WeaviateRetriever(VectorRetriever):
         col = await self._ensure_collection()
         try:
             query_text = params.original_query or ""
+            if not query_text:
+                logger.warning(
+                    "Weaviate hybrid search requires original_query text for BM25. "
+                    "Falling back to dense-only search."
+                )
             where = self._build_where(params.filters) if params.filters else None
             # Use native hybrid with alpha as specified;
             # relative score fusion is default
