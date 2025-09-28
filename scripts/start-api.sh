@@ -382,7 +382,7 @@ main() {
 
     log INFO "Starting AskMe RAG API server..."
     log INFO "Project directory: $PROJECT_ROOT"
-    log INFO "Using environment variables: $(get_active_params | wc -l)/$(echo ${#ALL_AVAILABLE_PARAMS[@]})"
+    log INFO "Using environment variables: $(get_active_params | wc -l)/${#ALL_PARAM_KEYS[@]}"
 
     # Build uvicorn command
     local uvicorn_args=(

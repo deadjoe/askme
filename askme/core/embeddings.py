@@ -130,10 +130,26 @@ class BGEEmbeddingService:
                     self.config.max_length,
                 )
 
+                # Debug: Log available keys in batch_results
+                logger.info(f"BGE-M3 batch_results keys: {list(batch_results.keys())}")
+
                 # Process results
                 for j, text in enumerate(batch_texts):
                     dense_embedding = batch_results["dense_vecs"][j]
-                    sparse_embedding = batch_results["sparse_vecs"][j]
+
+                    # Handle sparse vectors with fallback
+                    if "sparse_vecs" in batch_results:
+                        sparse_embedding = batch_results["sparse_vecs"][j]
+                    elif "lexical_weights" in batch_results:
+                        # Alternative key name for sparse vectors in BGE-M3 versions
+                        sparse_embedding = batch_results["lexical_weights"][j]
+                    else:
+                        # Fallback: create empty sparse embedding
+                        logger.warning(
+                            f"No sparse vectors found in BGE-M3 output, "
+                            f"available keys: {list(batch_results.keys())}"
+                        )
+                        sparse_embedding = []
 
                     # Normalize dense embedding if configured
                     if self.config.normalize_embeddings:
