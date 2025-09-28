@@ -208,87 +208,77 @@ if [[ "$SKIP_HEAVY_INIT" == "true" ]]; then
 fi
 
 # All available parameters from codebase analysis
-declare -A ALL_AVAILABLE_PARAMS=(
-    # Core configuration
-    ["ASKME_VECTOR_BACKEND"]="Vector database backend"
-    ["ASKME_ENABLE_OLLAMA"]="Enable Ollama"
-    ["ASKME_ENABLE_COHERE"]="Enable Cohere"
-    ["ASKME_SKIP_HEAVY_INIT"]="Skip heavy initialization"
-    # Database configuration
-    ["ASKME_DATABASE__HOST"]="Database host"
-    ["ASKME_DATABASE__PORT"]="Database port"
-    ["ASKME_DATABASE__MILVUS__HOST"]="Milvus host"
-    ["ASKME_DATABASE__MILVUS__PORT"]="Milvus port"
-    ["ASKME_DATABASE__MILVUS__USERNAME"]="Milvus username"
-    ["ASKME_DATABASE__MILVUS__PASSWORD"]="Milvus password"
-    ["ASKME_DATABASE__MILVUS__SECURE"]="Milvus secure connection"
-    ["ASKME_DATABASE__MILVUS__COLLECTION_NAME"]="Milvus collection name"
-    ["ASKME_DATABASE__WEAVIATE__URL"]="Weaviate URL"
-    ["ASKME_DATABASE__WEAVIATE__API_KEY"]="Weaviate API key"
-    ["ASKME_DATABASE__WEAVIATE__CLASS_NAME"]="Weaviate class name"
-    ["ASKME_DATABASE__QDRANT__URL"]="Qdrant URL"
-    ["ASKME_DATABASE__QDRANT__API_KEY"]="Qdrant API key"
-    ["ASKME_DATABASE__QDRANT__COLLECTION_NAME"]="Qdrant collection name"
-    # Generation configuration
-    ["ASKME_GENERATION__PROVIDER"]="LLM provider"
-    ["ASKME_GENERATION__OLLAMA_MODEL"]="Ollama model"
-    ["ASKME_GENERATION__OLLAMA_ENDPOINT"]="Ollama endpoint"
-    ["ASKME_GENERATION__MODEL_NAME"]="Model name"
-    ["ASKME_GENERATION__MAX_TOKENS"]="Max token count"
-    ["ASKME_GENERATION__TEMPERATURE"]="Generation temperature"
-    ["ASKME_GENERATION__TOP_P"]="Top-p sampling"
-    ["ASKME_GENERATION__OPENAI_MODEL"]="OpenAI model"
-    ["ASKME_GENERATION__OPENAI_BASE_URL"]="OpenAI endpoint"
-    ["ASKME_GENERATION__OPENAI_API_KEY_ENV"]="OpenAI API key env var name"
-    # OpenAI/evaluation configuration
-    ["OPENAI_BASE_URL"]="OpenAI compatible endpoint"
-    ["OPENAI_API_KEY"]="OpenAI API key"
-    ["COHERE_API_KEY"]="Cohere API key"
-    ["ASKME_RAGAS_LLM_MODEL"]="Ragas LLM model"
-    ["ASKME_RAGAS_EMBED_MODEL"]="Ragas embedding model"
-    # Embedding configuration
-    ["ASKME_EMBEDDING__MODEL"]="Embedding model"
-    ["ASKME_EMBEDDING__DIMENSION"]="Embedding dimension"
-    ["ASKME_EMBEDDING__BATCH_SIZE"]="Embedding batch size"
-    ["ASKME_EMBEDDING__MAX_LENGTH"]="Max input length"
-    # Hybrid search configuration
-    ["ASKME_HYBRID__MODE"]="Hybrid search mode"
-    ["ASKME_HYBRID__ALPHA"]="Alpha fusion parameter"
-    ["ASKME_HYBRID__RRF_K"]="RRF fusion parameter"
-    ["ASKME_HYBRID__TOPK"]="Initial retrieval count"
-    # Reranking configuration
-    ["ASKME_RERANK__LOCAL_MODEL"]="Local reranking model"
-    ["ASKME_RERANK__TOP_N"]="Reranking output count"
-    ["ASKME_RERANK__COHERE_MODEL"]="Cohere reranking model"
-    # API configuration
-    ["ASKME_API__HOST"]="API host"
-    ["ASKME_API__PORT"]="API port"
-    ["ASKME_API__WORKERS"]="API worker count"
-    ["ASKME_API__RELOAD"]="API hot reload"
-    # Query enhancement
-    ["ASKME_ENHANCER__HYDE__ENABLED"]="Enable HyDE"
-    ["ASKME_ENHANCER__RAG_FUSION__ENABLED"]="Enable RAG-Fusion"
-    # Performance configuration
-    ["ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE"]="Embedding batch size"
-    ["ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE"]="Reranking batch size"
-    ["ASKME_PERFORMANCE__TIMEOUTS__RETRIEVAL_TIMEOUT"]="Retrieval timeout"
-    # Logging configuration
-    ["ASKME_LOG_LEVEL"]="Log level"
-    ["ASKME_LOGGING__LEVEL"]="Detailed log level"
-    # Special configuration
-    ["ASKME_OLLAMA_READ_TIMEOUT"]="Ollama read timeout"
-    ["ASKME_OLLAMA_THINKING"]="Ollama thinking mode"
-    ["TOKENIZERS_PARALLELISM"]="Tokenizers parallelism"
-    ["OLLAMA_BASE_URL"]="Ollama base URL"
-    ["OLLAMA_API_KEY"]="Ollama API key"
-    ["WEAVIATE_URL"]="Weaviate test URL"
+# Use bash 3.2 compatible approach - separate arrays for keys and descriptions
+ALL_PARAM_KEYS=(
+    "ASKME_VECTOR_BACKEND"
+    "ASKME_ENABLE_OLLAMA"
+    "ASKME_ENABLE_COHERE"
+    "ASKME_SKIP_HEAVY_INIT"
+    "ASKME_DATABASE__HOST"
+    "ASKME_DATABASE__PORT"
+    "ASKME_DATABASE__MILVUS__HOST"
+    "ASKME_DATABASE__MILVUS__PORT"
+    "ASKME_DATABASE__MILVUS__USERNAME"
+    "ASKME_DATABASE__MILVUS__PASSWORD"
+    "ASKME_DATABASE__MILVUS__SECURE"
+    "ASKME_DATABASE__MILVUS__COLLECTION_NAME"
+    "ASKME_DATABASE__WEAVIATE__URL"
+    "ASKME_DATABASE__WEAVIATE__API_KEY"
+    "ASKME_DATABASE__WEAVIATE__CLASS_NAME"
+    "ASKME_DATABASE__QDRANT__URL"
+    "ASKME_DATABASE__QDRANT__API_KEY"
+    "ASKME_DATABASE__QDRANT__COLLECTION_NAME"
+    "ASKME_GENERATION__PROVIDER"
+    "ASKME_GENERATION__OLLAMA_MODEL"
+    "ASKME_GENERATION__OLLAMA_ENDPOINT"
+    "ASKME_GENERATION__MODEL_NAME"
+    "ASKME_GENERATION__MAX_TOKENS"
+    "ASKME_GENERATION__TEMPERATURE"
+    "ASKME_GENERATION__TOP_P"
+    "ASKME_GENERATION__OPENAI_MODEL"
+    "ASKME_GENERATION__OPENAI_BASE_URL"
+    "ASKME_GENERATION__OPENAI_API_KEY_ENV"
+    "OPENAI_BASE_URL"
+    "OPENAI_API_KEY"
+    "COHERE_API_KEY"
+    "ASKME_RAGAS_LLM_MODEL"
+    "ASKME_RAGAS_EMBED_MODEL"
+    "ASKME_EMBEDDING__MODEL"
+    "ASKME_EMBEDDING__DIMENSION"
+    "ASKME_EMBEDDING__BATCH_SIZE"
+    "ASKME_EMBEDDING__MAX_LENGTH"
+    "ASKME_HYBRID__MODE"
+    "ASKME_HYBRID__ALPHA"
+    "ASKME_HYBRID__RRF_K"
+    "ASKME_HYBRID__TOPK"
+    "ASKME_RERANK__LOCAL_MODEL"
+    "ASKME_RERANK__TOP_N"
+    "ASKME_RERANK__COHERE_MODEL"
+    "ASKME_API__HOST"
+    "ASKME_API__PORT"
+    "ASKME_API__WORKERS"
+    "ASKME_API__RELOAD"
+    "ASKME_ENHANCER__HYDE__ENABLED"
+    "ASKME_ENHANCER__RAG_FUSION__ENABLED"
+    "ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE"
+    "ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE"
+    "ASKME_PERFORMANCE__TIMEOUTS__RETRIEVAL_TIMEOUT"
+    "ASKME_LOG_LEVEL"
+    "ASKME_LOGGING__LEVEL"
+    "ASKME_OLLAMA_READ_TIMEOUT"
+    "ASKME_OLLAMA_THINKING"
+    "TOKENIZERS_PARALLELISM"
+    "OLLAMA_BASE_URL"
+    "OLLAMA_API_KEY"
+    "WEAVIATE_URL"
 )
 
 # Get currently active environment variables
 get_active_params() {
     local active_params=()
-    for param in "${!ALL_AVAILABLE_PARAMS[@]}"; do
-        if [[ -n "${!param:-}" ]]; then
+    for param in "${ALL_PARAM_KEYS[@]}"; do
+        # Use eval to safely check if environment variable is set
+        if eval "[[ -n \"\${${param}:-}\" ]]" 2>/dev/null; then
             active_params+=("$param")
         fi
     done
@@ -297,7 +287,7 @@ get_active_params() {
 
 # Show configuration summary
 show_config_summary() {
-    local total_params=${#ALL_AVAILABLE_PARAMS[@]}
+    local total_params=${#ALL_PARAM_KEYS[@]}
     local active_params=($(get_active_params))
     local active_count=${#active_params[@]}
     local usage_percentage=$((active_count * 100 / total_params))
@@ -332,8 +322,9 @@ show_config_summary() {
     echo "🔧 Active Environment Variables ($active_count/$total_params):"
     echo "   ┌─────────────────────────────────────────────────────────────────────┐"
     for param in "${active_params[@]}"; do
-        local desc="${ALL_AVAILABLE_PARAMS[$param]}"
-        local value="${!param}"
+        local value
+        # Use eval to safely get environment variable value
+        value=$(eval "echo \"\${${param}:-}\"" 2>/dev/null || echo "")
         # Truncate overly long values
         if [[ ${#value} -gt 40 ]]; then
             value="${value:0:37}..."
@@ -358,7 +349,8 @@ check_dependencies() {
 
     # Check project directory
     if [[ ! -f "$PROJECT_ROOT/pyproject.toml" ]]; then
-        log ERROR "Incorrect project root directory: $PROJECT_ROOT"
+        log ERROR "Cannot find pyproject.toml in project root: $PROJECT_ROOT"
+        log ERROR "Please ensure you are running this script from the repository root directory"
         return 1
     fi
 
