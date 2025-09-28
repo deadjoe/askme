@@ -45,20 +45,25 @@ class BGEEmbeddingService:
         # Allow operation without torch installed (skip GPU detection)
         self.device = "cpu"  # fallback default
         if torch_module is not None:
-            # Check for Apple Silicon MPS (Metal Performance Shaders)
-            if hasattr(torch_module, "backends") and hasattr(
+            # Check for NVIDIA CUDA (preferred for BGE-M3 stability)
+            if hasattr(torch_module, "cuda"):
+                cuda_mod = getattr(torch_module, "cuda")
+                is_available = getattr(cuda_mod, "is_available", None)
+                if callable(is_available) and is_available():
+                    self.device = "cuda"
+            # Check for Apple Silicon MPS (known memory leak issues with BGE-M3)
+            elif hasattr(torch_module, "backends") and hasattr(
                 torch_module.backends, "mps"
             ):
                 mps_mod = getattr(torch_module.backends, "mps")
                 is_available = getattr(mps_mod, "is_available", None)
                 if callable(is_available) and is_available():
+                    # Use MPS but with memory management warnings
                     self.device = "mps"
-            # Check for NVIDIA CUDA
-            elif hasattr(torch_module, "cuda"):
-                cuda_mod = getattr(torch_module, "cuda")
-                is_available = getattr(cuda_mod, "is_available", None)
-                if callable(is_available) and is_available():
-                    self.device = "cuda"
+                    logger.warning(
+                        "Using MPS backend for BGE-M3 - known memory leak issues. "
+                        "Monitor memory usage, consider CPU for large datasets."
+                    )
         self._is_initialized = False
         # Thread pool for CPU-intensive embedding operations
         self._executor = ThreadPoolExecutor(
@@ -191,6 +196,33 @@ class BGEEmbeddingService:
             raise RuntimeError("Embedding model not initialized")
         return self.model
 
+    def _mps_memory_cleanup(self) -> None:
+        """
+        Perform memory cleanup for MPS backend to mitigate known memory leaks.
+
+        BGE-M3 has known memory leak issues on Apple Silicon MPS backend.
+        This method attempts to mitigate the issue by explicit memory management.
+        """
+        try:
+            import gc
+
+            if torch_module is not None and hasattr(torch_module, "mps"):
+                # Force garbage collection
+                gc.collect()
+
+                # Clear MPS cache if available
+                if hasattr(torch_module.mps, "empty_cache"):
+                    torch_module.mps.empty_cache()
+
+                # Synchronize MPS operations
+                if hasattr(torch_module.mps, "synchronize"):
+                    torch_module.mps.synchronize()
+
+                logger.debug("MPS memory cleanup completed")
+
+        except Exception as e:
+            logger.warning(f"MPS memory cleanup failed: {e}")
+
     def _encode_batch_sync(
         self, texts: List[str], batch_size: int, max_length: int
     ) -> Dict[str, Any]:
@@ -207,7 +239,7 @@ class BGEEmbeddingService:
             warnings.filterwarnings(
                 "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
             )
-            return cast(
+            result = cast(
                 Dict[str, Any],
                 model.encode(
                     texts,
@@ -217,6 +249,12 @@ class BGEEmbeddingService:
                     return_sparse=True,
                 ),
             )
+
+            # Memory management for MPS backend (known memory leak mitigation)
+            if self.device == "mps":
+                self._mps_memory_cleanup()
+
+            return result
 
     def _encode_single_batch(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
@@ -231,7 +269,7 @@ class BGEEmbeddingService:
             warnings.filterwarnings(
                 "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
             )
-            return cast(
+            result = cast(
                 Dict[str, Any],
                 model.encode(
                     [text],
@@ -241,6 +279,12 @@ class BGEEmbeddingService:
                     return_sparse=True,
                 ),
             )
+
+            # Memory management for MPS backend
+            if self.device == "mps":
+                self._mps_memory_cleanup()
+
+            return result
 
     def _encode_sparse_single(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
@@ -255,7 +299,7 @@ class BGEEmbeddingService:
             warnings.filterwarnings(
                 "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
             )
-            return cast(
+            result = cast(
                 Dict[str, Any],
                 model.encode(
                     [text],
@@ -265,6 +309,12 @@ class BGEEmbeddingService:
                     return_sparse=True,
                 ),
             )
+
+            # Memory management for MPS backend
+            if self.device == "mps":
+                self._mps_memory_cleanup()
+
+            return result
 
     def _encode_query_single(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
@@ -279,7 +329,7 @@ class BGEEmbeddingService:
             warnings.filterwarnings(
                 "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
             )
-            return cast(
+            result = cast(
                 Dict[str, Any],
                 model.encode(
                     [text],
@@ -289,6 +339,12 @@ class BGEEmbeddingService:
                     return_sparse=True,
                 ),
             )
+
+            # Memory management for MPS backend
+            if self.device == "mps":
+                self._mps_memory_cleanup()
+
+            return result
 
     def _extract_dense_vector(self, result: Dict[str, Any]) -> List[float]:
         """Extract 1D dense embedding from model results."""
