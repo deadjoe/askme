@@ -206,6 +206,8 @@ logging:
 
 # Performance & Monitoring
 performance:
+  ingestion:
+    max_workers: 0  # 0 or negative uses CPU count at runtime
   # Caching
   cache:
     enabled: true
