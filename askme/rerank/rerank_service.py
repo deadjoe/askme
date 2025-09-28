@@ -65,11 +65,26 @@ class BGEReranker(BaseReranker):
     def __init__(self, config: RerankConfig):
         self.config = config
         self.model: Any | None = None
-        self.device = (
-            "cuda"
-            if (_torch and hasattr(_torch, "cuda") and _torch.cuda.is_available())
-            else "cpu"
-        )
+        # Device detection matching embeddings.py logic
+        self.device = "cpu"  # fallback default
+        if _torch is not None:
+            # Check for NVIDIA CUDA (preferred for stability)
+            if hasattr(_torch, "cuda"):
+                cuda_mod = getattr(_torch, "cuda")
+                is_available = getattr(cuda_mod, "is_available", None)
+                if callable(is_available) and is_available():
+                    self.device = "cuda"
+
+            # Check for Apple Silicon MPS
+            if (
+                self.device == "cpu"
+                and hasattr(_torch, "backends")
+                and hasattr(_torch.backends, "mps")
+            ):
+                mps_mod = getattr(_torch.backends, "mps")
+                is_available = getattr(mps_mod, "is_available", None)
+                if callable(is_available) and is_available():
+                    self.device = "mps"
         self._is_initialized = False
 
     async def initialize(self) -> None:

@@ -52,8 +52,10 @@ class BGEEmbeddingService:
                 if callable(is_available) and is_available():
                     self.device = "cuda"
             # Check for Apple Silicon MPS (known memory leak issues with BGE-M3)
-            elif hasattr(torch_module, "backends") and hasattr(
-                torch_module.backends, "mps"
+            if (
+                self.device == "cpu"
+                and hasattr(torch_module, "backends")
+                and hasattr(torch_module.backends, "mps")
             ):
                 mps_mod = getattr(torch_module.backends, "mps")
                 is_available = getattr(mps_mod, "is_available", None)
@@ -196,29 +198,36 @@ class BGEEmbeddingService:
             raise RuntimeError("Embedding model not initialized")
         return self.model
 
-    def _mps_memory_cleanup(self) -> None:
+    def _mps_memory_cleanup(self, force: bool = False) -> None:
         """
-        Perform memory cleanup for MPS backend to mitigate known memory leaks.
+        Perform selective memory cleanup for MPS backend to mitigate known memory leaks.
 
         BGE-M3 has known memory leak issues on Apple Silicon MPS backend.
-        This method attempts to mitigate the issue by explicit memory management.
+        This method attempts to mitigate the issue with minimal GPU utilization impact.
         """
         try:
-            import gc
-
             if torch_module is not None and hasattr(torch_module, "mps"):
-                # Force garbage collection
-                gc.collect()
+                # Only perform cleanup every N operations or when forced
+                if not hasattr(self, "_mps_cleanup_counter"):
+                    self._mps_cleanup_counter = 0
 
-                # Clear MPS cache if available
-                if hasattr(torch_module.mps, "empty_cache"):
-                    torch_module.mps.empty_cache()
+                self._mps_cleanup_counter += 1
 
-                # Synchronize MPS operations
-                if hasattr(torch_module.mps, "synchronize"):
-                    torch_module.mps.synchronize()
+                # Cleanup every 10 operations or when forced
+                if force or self._mps_cleanup_counter % 10 == 0:
+                    import gc
 
-                logger.debug("MPS memory cleanup completed")
+                    # Lightweight garbage collection
+                    gc.collect()
+
+                    # Clear MPS cache if available (less frequent)
+                    if hasattr(torch_module.mps, "empty_cache"):
+                        torch_module.mps.empty_cache()
+
+                    logger.debug(
+                        f"MPS memory cleanup completed (cycle: "
+                        f"{self._mps_cleanup_counter})"
+                    )
 
         except Exception as e:
             logger.warning(f"MPS memory cleanup failed: {e}")
