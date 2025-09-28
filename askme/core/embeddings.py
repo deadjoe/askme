@@ -43,13 +43,22 @@ class BGEEmbeddingService:
         self.config = config
         self.model: Any | None = None
         # Allow operation without torch installed (skip GPU detection)
-        has_cuda = False
-        if torch_module is not None and hasattr(torch_module, "cuda"):
-            cuda_mod = getattr(torch_module, "cuda")
-            is_available = getattr(cuda_mod, "is_available", None)
-            if callable(is_available):
-                has_cuda = bool(is_available())
-        self.device = "cuda" if has_cuda else "cpu"
+        self.device = "cpu"  # fallback default
+        if torch_module is not None:
+            # Check for Apple Silicon MPS (Metal Performance Shaders)
+            if hasattr(torch_module, "backends") and hasattr(
+                torch_module.backends, "mps"
+            ):
+                mps_mod = getattr(torch_module.backends, "mps")
+                is_available = getattr(mps_mod, "is_available", None)
+                if callable(is_available) and is_available():
+                    self.device = "mps"
+            # Check for NVIDIA CUDA
+            elif hasattr(torch_module, "cuda"):
+                cuda_mod = getattr(torch_module, "cuda")
+                is_available = getattr(cuda_mod, "is_available", None)
+                if callable(is_available) and is_available():
+                    self.device = "cuda"
         self._is_initialized = False
         # Thread pool for CPU-intensive embedding operations
         self._executor = ThreadPoolExecutor(
