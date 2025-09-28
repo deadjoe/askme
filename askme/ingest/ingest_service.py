@@ -1,9 +1,8 @@
-"""
-Document ingestion service connecting processing pipeline with vector database.
-"""
+"""Document ingestion service connecting processing pipeline with vector database."""
 
 import asyncio
 import logging
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -113,14 +112,14 @@ class IngestionService:
         self._running_tasks: Dict[str, asyncio.Task] = {}
 
         # Thread pool for CPU-intensive operations
+        ingestion_cfg = getattr(settings.performance, "ingestion", None)
+        configured_workers = getattr(ingestion_cfg, "max_workers", None)
+        max_workers = self._resolve_max_workers(configured_workers)
         self._executor = ThreadPoolExecutor(
-            max_workers=(
-                settings.performance.ingestion.max_workers
-                if hasattr(settings.performance, "ingestion")
-                else 2
-            ),
+            max_workers=max_workers,
             thread_name_prefix="askme-ingest",
         )
+        logger.info("Ingestion thread pool initialized with %s workers", max_workers)
 
     async def initialize(self) -> None:
         """Initialize the ingestion service."""
@@ -141,6 +140,18 @@ class IngestionService:
         except Exception as e:
             logger.error(f"Failed to initialize ingestion service: {e}")
             raise
+
+    def _resolve_max_workers(self, configured: Optional[int]) -> int:
+        """Determine thread pool size with sensible defaults."""
+        if configured is not None and configured > 0:
+            return max(1, configured)
+
+        cpu_count = os.cpu_count() or 2
+        if cpu_count <= 4:
+            return max(2, cpu_count)
+
+        # Reserve a core for the event loop / other components and cap upper bound
+        return min(max(4, cpu_count - 1), 32)
 
     async def ingest_file(
         self,

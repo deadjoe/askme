@@ -1,7 +1,6 @@
-"""
-Configuration management using Pydantic settings.
-"""
+"""Configuration management using Pydantic settings."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -269,6 +268,15 @@ class LoggingConfig(BaseSettings):
 class PerformanceConfig(BaseSettings):
     """Performance and monitoring configuration."""
 
+    class IngestionConfig(BaseSettings):
+        max_workers: Optional[int] = Field(
+            default=None,
+            description=(
+                "Number of worker threads for ingestion pipeline. "
+                "Defaults to CPU count when unset or <= 0."
+            ),
+        )
+
     class CacheConfig(BaseSettings):
         enabled: bool = True
         ttl_seconds: int = 3600
@@ -285,6 +293,7 @@ class PerformanceConfig(BaseSettings):
         rerank_timeout: int = 30
         generation_timeout: int = 60
 
+    ingestion: IngestionConfig = IngestionConfig()
     cache: CacheConfig = CacheConfig()
     batch: BatchConfig = BatchConfig()
     timeouts: TimeoutConfig = TimeoutConfig()
@@ -348,8 +357,6 @@ class Settings(BaseSettings):
     @classmethod
     def from_yaml(cls, config_path: str = "configs/askme.yaml") -> "Settings":
         """Load settings from YAML file with environment variable overrides."""
-        import os
-
         config_file = Path(config_path)
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
