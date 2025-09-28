@@ -1,16 +1,15 @@
-"""
-Document ingestion service connecting processing pipeline with vector database.
-"""
+"""Document ingestion service connecting processing pipeline with vector database."""
 
 import asyncio
 import logging
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 from askme.core.config import Settings
 from askme.core.embeddings import BGEEmbeddingService, EmbeddingManager
@@ -113,14 +112,14 @@ class IngestionService:
         self._running_tasks: Dict[str, asyncio.Task] = {}
 
         # Thread pool for CPU-intensive operations
+        ingestion_cfg = getattr(settings.performance, "ingestion", None)
+        configured_workers = getattr(ingestion_cfg, "max_workers", None)
+        max_workers = self._resolve_max_workers(configured_workers)
         self._executor = ThreadPoolExecutor(
-            max_workers=(
-                settings.performance.ingestion.max_workers
-                if hasattr(settings.performance, "ingestion")
-                else 2
-            ),
+            max_workers=max_workers,
             thread_name_prefix="askme-ingest",
         )
+        logger.info("Ingestion thread pool initialized with %s workers", max_workers)
 
     async def initialize(self) -> None:
         """Initialize the ingestion service."""
@@ -141,6 +140,18 @@ class IngestionService:
         except Exception as e:
             logger.error(f"Failed to initialize ingestion service: {e}")
             raise
+
+    def _resolve_max_workers(self, configured: Optional[int]) -> int:
+        """Determine thread pool size with sensible defaults."""
+        if configured is not None and configured > 0:
+            return max(1, configured)
+
+        cpu_count = os.cpu_count() or 2
+        if cpu_count <= 4:
+            return max(2, cpu_count)
+
+        # Reserve a core for the event loop / other components and cap upper bound
+        return min(max(4, cpu_count - 1), 32)
 
     async def ingest_file(
         self,
@@ -221,14 +232,6 @@ class IngestionService:
                 f"*.{fmt}" for fmt in self.settings.document.supported_formats
             ]
 
-        file_count = 0
-        for pattern in file_patterns:
-            if recursive:
-                files = list(dir_path.rglob(pattern))
-            else:
-                files = list(dir_path.glob(pattern))
-            file_count += len(files)
-
         # Create ingestion task
         task = IngestionTask(
             task_id=task_id,
@@ -236,7 +239,7 @@ class IngestionService:
             source_path=str(dir_path),
             status=TaskStatus.QUEUED,
             created_at=get_utc_now(),
-            total_files=file_count,
+            total_files=0,
             metadata={
                 "user_metadata": metadata or {},
                 "tags": tags or [],
@@ -257,8 +260,11 @@ class IngestionService:
         self._running_tasks[task_id] = processing_task
 
         logger.info(
-            f"Started directory ingestion task {task_id}: {dir_path} "
-            f"({file_count} files)"
+            "Started directory ingestion task %s: %s (recursive=%s, patterns=%s)",
+            task_id,
+            dir_path,
+            recursive,
+            ",".join(file_patterns),
         )
         return task_id
 
@@ -358,29 +364,28 @@ class IngestionService:
         finally:
             loop.close()
 
-    def _process_directory_sync(
+    def _iter_directory_files(
         self,
         dir_path: Path,
         recursive: bool,
-        metadata: Optional[Dict[str, Any]],
-        tags: Optional[List[str]],
         file_patterns: List[str],
-    ) -> List[Document]:
-        """Synchronous wrapper for directory processing to run in thread pool."""
-        import asyncio
+    ) -> Iterable[Path]:
+        """Yield unique files under directory matching configured patterns."""
+        seen: set[str] = set()
 
-        # Create new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        try:
-            return loop.run_until_complete(
-                self.processing_pipeline.process_directory(
-                    dir_path, recursive, metadata, tags, file_patterns
-                )
-            )
-        finally:
-            loop.close()
+        for pattern in file_patterns:
+            iterator = dir_path.rglob(pattern) if recursive else dir_path.glob(pattern)
+            for file_path in iterator:
+                if not file_path.is_file():
+                    continue
+                try:
+                    key = str(file_path.resolve())
+                except Exception:
+                    key = str(file_path)
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield file_path
 
     async def _process_directory_task(
         self,
@@ -396,73 +401,87 @@ class IngestionService:
         try:
             task.status = TaskStatus.PROCESSING
             task.started_at = get_utc_now()
-            processing_start = get_utc_now()
+            files_processed = 0
+            total_doc_processing = 0.0
+            total_embedding = 0.0
 
-            # Process the directory in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
-            documents = await loop.run_in_executor(
-                self._executor,
-                self._process_directory_sync,
-                dir_path,
-                recursive,
-                metadata,
-                tags,
-                file_patterns,
-            )
 
-            # Track document processing time
-            processing_end = get_utc_now()
-            doc_processing_time = (processing_end - processing_start).total_seconds()
+            for file_path in self._iter_directory_files(
+                dir_path, recursive, file_patterns
+            ):
+                file_processing_start = get_utc_now()
+
+                try:
+                    relative_path = str(file_path.relative_to(dir_path))
+                except ValueError:
+                    relative_path = file_path.name
+
+                file_metadata = {
+                    **(metadata or {}),
+                    "source_directory": str(dir_path),
+                    "relative_path": relative_path,
+                }
+
+                documents = await loop.run_in_executor(
+                    self._executor,
+                    self._process_file_sync,
+                    file_path,
+                    file_metadata,
+                    tags,
+                )
+
+                total_doc_processing += (
+                    get_utc_now() - file_processing_start
+                ).total_seconds()
+
+                # Collect file statistics
+                try:
+                    file_size = file_path.stat().st_size
+                except OSError:
+                    file_size = 0
+                task.total_size_bytes += file_size
+                file_extension = file_path.suffix.lower()
+                if task.files_by_type is not None:
+                    task.files_by_type[file_extension] = (
+                        task.files_by_type.get(file_extension, 0) + 1
+                    )
+
+                chunk_count = len(documents)
+                task.total_chunks += chunk_count
+
+                embedding_start = get_utc_now()
+                await self._ingest_documents_non_blocking(task, documents, overwrite)
+                total_embedding += (get_utc_now() - embedding_start).total_seconds()
+
+                files_processed += 1
+                task.processed_files = files_processed
+                task.total_files = files_processed
+
             if task.processing_stages is not None:
-                task.processing_stages["document_processing"] = doc_processing_time
+                if total_doc_processing:
+                    task.processing_stages["document_processing"] = (
+                        task.processing_stages.get("document_processing", 0.0)
+                        + total_doc_processing
+                    )
+                if total_embedding:
+                    task.processing_stages["embedding_and_ingestion"] = (
+                        task.processing_stages.get("embedding_and_ingestion", 0.0)
+                        + total_embedding
+                    )
 
-            task.total_chunks = len(documents)
-
-            # Group documents by source file for progress tracking and collect stats
-            files_processed = set()
-            processed_file_paths = set()  # Track file paths to avoid double-counting
-            for doc in documents:
-                source_file = doc.metadata.get("source_document", "unknown")
-                files_processed.add(source_file)
-
-                # Collect file statistics from document metadata (avoid double counting)
-                if "file_path" in doc.metadata:
-                    file_path = Path(doc.metadata["file_path"])
-                    if (
-                        file_path.exists()
-                        and str(file_path) not in processed_file_paths
-                    ):
-                        processed_file_paths.add(str(file_path))
-                        file_size = file_path.stat().st_size
-                        file_extension = file_path.suffix.lower()
-                        task.total_size_bytes += file_size
-                        if task.files_by_type is not None:
-                            task.files_by_type[file_extension] = (
-                                task.files_by_type.get(file_extension, 0) + 1
-                            )
-
-            task.processed_files = len(files_processed)
-
-            # Generate embeddings and ingest with yield points
-            embedding_start = get_utc_now()
-            await self._ingest_documents_non_blocking(task, documents, overwrite)
-            embedding_end = get_utc_now()
-
-            # Track embedding and ingestion time
-            embedding_time = (embedding_end - embedding_start).total_seconds()
-            if task.processing_stages is not None:
-                task.processing_stages["embedding_and_ingestion"] = embedding_time
-
-            # Mark as completed
             task.status = TaskStatus.COMPLETED
             task.completed_at = get_utc_now()
 
             logger.info(
-                f"Directory ingestion task {task.task_id} completed: "
-                f"{task.processed_files} files, {len(documents)} chunks, "
-                f"{task.total_size_bytes} bytes, "
-                f"{doc_processing_time: .2f}s processing, "
-                f"{embedding_time: .2f}s embedding"
+                "Directory ingest %s done: files=%s chunks=%s size=%sB "
+                "proc=%.2fs embed=%.2fs",
+                task.task_id,
+                files_processed,
+                task.total_chunks,
+                task.total_size_bytes,
+                total_doc_processing,
+                total_embedding,
             )
 
         except Exception as e:
@@ -562,13 +581,8 @@ class IngestionService:
                 logger.error(f"Failed to insert document batch: {e}")
                 raise
 
-            # Yield control and add backpressure management
-            await asyncio.sleep(0.01)  # Small delay for backpressure
-
-            # Optional: Check if we should slow down based on system load
-            # This could be expanded with more sophisticated backpressure
-            if (i + batch_size) % (batch_size * 10) == 0:  # Every 10 batches
-                await asyncio.sleep(0.1)  # Longer pause every 10 batches
+            # Yield control without imposing artificial delay
+            await asyncio.sleep(0)
 
     async def get_task_status(self, task_id: str) -> Optional[IngestionTask]:
         """Get the status of an ingestion task."""

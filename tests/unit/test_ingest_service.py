@@ -104,9 +104,11 @@ async def test_ingest_file_happy_path(svc: Any, tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_directory_happy_path(svc: Any, tmp_path: Any) -> None:
-    # Emulate directory processing returning one Document
-    docs = [Document(id="d3", content="alpha")]
-    svc.processing_pipeline.process_directory = AsyncMock(return_value=docs)
+    file_path = tmp_path / "alpha.txt"
+    file_path.write_text("alpha content")
+
+    docs = [Document(id="d3", content="alpha", metadata={"file_path": str(file_path)})]
+    svc.processing_pipeline.process_file = AsyncMock(return_value=docs)
 
     task_id = await svc.ingest_directory(tmp_path)
     await svc._running_tasks[task_id]
@@ -114,7 +116,9 @@ async def test_ingest_directory_happy_path(svc: Any, tmp_path: Any) -> None:
     task = await svc.get_task_status(task_id)
     assert task is not None and task.status == TaskStatus.COMPLETED
     assert task.total_chunks == 1
-    assert task.processed_files >= 0
+    assert task.processed_files == 1
+    assert task.total_files == 1
+    svc.processing_pipeline.process_file.assert_awaited()
 
 
 @pytest.mark.asyncio
