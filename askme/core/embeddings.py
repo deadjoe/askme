@@ -187,55 +187,99 @@ class BGEEmbeddingService:
     ) -> Dict[str, Any]:
         """Synchronous batch encoding for thread pool execution."""
         model = self._require_model()
-        return cast(
-            Dict[str, Any],
-            model.encode(
-                texts,
-                batch_size=batch_size,
-                max_length=max_length,
-                return_dense=True,
-                return_sparse=True,
-            ),
-        )
+
+        # Suppress tokenizer warnings during encoding
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*fast tokenizer.*__call__.*method.*faster.*",
+                category=UserWarning,
+            )
+            warnings.filterwarnings(
+                "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
+            )
+            return cast(
+                Dict[str, Any],
+                model.encode(
+                    texts,
+                    batch_size=batch_size,
+                    max_length=max_length,
+                    return_dense=True,
+                    return_sparse=True,
+                ),
+            )
 
     def _encode_single_batch(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
-        return cast(
-            Dict[str, Any],
-            model.encode(
-                [text],
-                batch_size=1,
-                max_length=max_length,
-                return_dense=True,
-                return_sparse=True,
-            ),
-        )
+
+        # Suppress tokenizer warnings during encoding
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*fast tokenizer.*__call__.*method.*faster.*",
+                category=UserWarning,
+            )
+            warnings.filterwarnings(
+                "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
+            )
+            return cast(
+                Dict[str, Any],
+                model.encode(
+                    [text],
+                    batch_size=1,
+                    max_length=max_length,
+                    return_dense=True,
+                    return_sparse=True,
+                ),
+            )
 
     def _encode_sparse_single(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
-        return cast(
-            Dict[str, Any],
-            model.encode(
-                [text],
-                batch_size=1,
-                max_length=max_length,
-                return_dense=False,
-                return_sparse=True,
-            ),
-        )
+
+        # Suppress tokenizer warnings during encoding
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*fast tokenizer.*__call__.*method.*faster.*",
+                category=UserWarning,
+            )
+            warnings.filterwarnings(
+                "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
+            )
+            return cast(
+                Dict[str, Any],
+                model.encode(
+                    [text],
+                    batch_size=1,
+                    max_length=max_length,
+                    return_dense=False,
+                    return_sparse=True,
+                ),
+            )
 
     def _encode_query_single(self, text: str, max_length: int) -> Dict[str, Any]:
         model = self._require_model()
-        return cast(
-            Dict[str, Any],
-            model.encode(
-                [text],
-                batch_size=1,
-                max_length=max_length,
-                return_dense=True,
-                return_sparse=True,
-            ),
-        )
+
+        # Suppress tokenizer warnings during encoding
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*fast tokenizer.*__call__.*method.*faster.*",
+                category=UserWarning,
+            )
+            warnings.filterwarnings(
+                "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
+            )
+            return cast(
+                Dict[str, Any],
+                model.encode(
+                    [text],
+                    batch_size=1,
+                    max_length=max_length,
+                    return_dense=True,
+                    return_sparse=True,
+                ),
+            )
 
     def _extract_dense_vector(self, result: Dict[str, Any]) -> List[float]:
         """Extract 1D dense embedding from model results."""
