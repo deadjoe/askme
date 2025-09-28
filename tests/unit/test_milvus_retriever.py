@@ -187,7 +187,8 @@ class TestMilvusRetrieverCore:
 
         assert result_ids == ["doc1", "doc2"]
         mock_collection.upsert.assert_called_once()
-        mock_collection.flush.assert_called_once()
+        # Small insertions should skip flush for performance optimization
+        mock_collection.flush.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_insert_documents_no_collection(self: Any) -> None:

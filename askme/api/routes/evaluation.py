@@ -206,19 +206,19 @@ async def run_evaluation(
             merged = _deep_merge(settings.model_dump(), req.config_overrides)
             run_settings = Settings(**merged)
         except Exception:
-            # 保底：若覆盖无效，仍使用原 settings，避免中断评测
+            # Fallback: use original settings if override fails, avoid eval interrupt
             run_settings = settings
 
-    # 构建样本：优先使用数据集（由 suite 或 dataset_path 指定），否则回退到固定问题
+    # Build samples: prefer dataset (by suite or dataset_path), else fallback to fixed
     request_samples = max(1, (req.sample_size or 3))
     sample_rows: List[Dict[str, Any]] = []
 
-    # 解析数据集路径
+    # Parse dataset path
     dataset_path: Optional[Path] = None
     if req.dataset_path:
         dataset_path = Path(req.dataset_path)
     else:
-        # 按 suite 映射到默认数据集
+        # Map suite to default dataset
         suite_name = (
             req.suite.value if isinstance(req.suite, EvalSuite) else str(req.suite)
         )
@@ -232,7 +232,7 @@ async def run_evaluation(
         app = request.app
 
         if dataset_path and dataset_path.exists():
-            # 逐条问题跑端到端管线
+            # Run each question through end-to-end pipeline
             loaded = 0
             with dataset_path.open("r", encoding="utf-8") as f:
                 for line in f:
@@ -277,13 +277,13 @@ async def run_evaluation(
                     except Exception:
                         continue
 
-            # 如果数据集不足，补齐
+            # Pad if dataset insufficient
             while loaded < request_samples:
                 try:
                     pr = await asyncio.wait_for(
                         run_pipeline_once(
                             app,
-                            "什么是混合检索？",
+                            "What is hybrid retrieval?",
                             run_settings,
                         ),
                         timeout=180.0,
@@ -304,13 +304,13 @@ async def run_evaluation(
                     print(f"DEBUG: Pipeline failed for fallback question, error: {e}")
                     loaded += 1  # Skip this sample
         else:
-            # 无数据集则用固定问题重复 N 次（稳定评测）
+            # No dataset: use fixed question repeated N times (stable eval)
             for i in range(request_samples):
                 try:
                     pr = await asyncio.wait_for(
                         run_pipeline_once(
                             app,
-                            "什么是混合检索？",
+                            "What is hybrid retrieval?",
                             run_settings,
                         ),
                         timeout=180.0,
@@ -332,14 +332,14 @@ async def run_evaluation(
                     # Continue to next sample instead of failing completely
                     continue
     except Exception:
-        # Fallback: 静态样本
+        # Fallback: static samples
         sample_rows = [
             {
-                "question": "什么是混合检索？",
-                "answer": "混合检索通常结合稀疏（BM25）与稠密（向量）检索，并使用 RRF 或 alpha 融合。",
+                "question": "What is hybrid retrieval?",
+                "answer": "Hybrid retrieval combines sparse (BM25) and dense search.",
                 "contexts": [
-                    "混合检索利用 BM25 与 dense embeddings 的互补性。",
-                    "RRF 或 alpha 融合可将不同通道的排名合并。",
+                    "Hybrid retrieval leverages BM25 and dense embeddings.",
+                    "RRF or alpha fusion merges rankings from different channels.",
                 ],
                 "ground_truths": [],
             }
@@ -449,9 +449,9 @@ async def run_evaluation(
                         name=name,
                         value=float(sanitized),
                         threshold=threshold,
-                        passed=(sanitized >= threshold)
-                        if threshold is not None
-                        else True,
+                        passed=(
+                            (sanitized >= threshold) if threshold is not None else True
+                        ),
                         details=ragas_details,
                     )
                 )
@@ -563,9 +563,9 @@ async def run_evaluation(
                     name=s.name,
                     value=s.value,
                     threshold=s.threshold,
-                    passed=(s.value >= s.threshold)
-                    if s.threshold is not None
-                    else True,
+                    passed=(
+                        (s.value >= s.threshold) if s.threshold is not None else True
+                    ),
                     details={"samples": request_samples, "note": "heuristic_fallback"},
                 )
             )
@@ -637,7 +637,7 @@ async def get_evaluation_results(
 
     data = storage_load_run(run_id)
     if not data:
-        # 为了 API 友好性，未找到也返回占位结果（测试期望 200）
+        # For API friendliness, return placeholder if not found (tests expect 200)
         return EvaluationResponse(
             run_id=run_id,
             status="not_found",
