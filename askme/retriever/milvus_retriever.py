@@ -142,10 +142,10 @@ class MilvusRetriever(VectorRetriever):
                 index_name="dense_idx",
             )
 
-            # Sparse vector index for BM25 search using optimal metric type
+            # Sparse vector index for sparse search using IP metric type
             sparse_index_params = {
                 "index_type": "SPARSE_INVERTED_INDEX",
-                "metric_type": "BM25",  # BM25 optimized for full-text search
+                "metric_type": "IP",  # IP metric for sparse vector search
                 "params": {},
             }
             collection.create_index(
@@ -514,9 +514,9 @@ class MilvusRetriever(VectorRetriever):
 
         try:
             search_params = {
-                "metric_type": "BM25",
+                "metric_type": "IP",
                 "params": {},
-            }  # Use BM25 for optimal sparse search
+            }  # Use IP for sparse vector search (BM25 is for index only)
 
             # Build filter expression if provided
             expr = self._build_filter_expression(filters) if filters else None
@@ -617,9 +617,9 @@ class MilvusRetriever(VectorRetriever):
                     data=[query_terms],
                     anns_field="sparse_vector",
                     param={
-                        "metric_type": "BM25",
+                        "metric_type": "IP",
                         "params": {},
-                    },  # Use BM25 for consistent sparse search
+                    },  # Use IP for sparse vector search (BM25 is for index only)
                     limit=params.topk,
                     expr=expr,
                 )
