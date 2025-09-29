@@ -46,22 +46,12 @@ class DatabaseConfig(BaseSettings):
 
     def model_post_init(self, __context: Any) -> None:
         # Keep top-level and milvus fields in sync for backward compatibility
-        # Prefer explicitly set top-level values if they differ from defaults
+        # Always prefer milvus nested config over top-level defaults
         try:
-            if self.milvus.host != self.host:
-                self.milvus.host = self.host
-            else:
-                self.host = self.milvus.host
-
-            if self.milvus.port != self.port:
-                self.milvus.port = self.port
-            else:
-                self.port = self.milvus.port
-
-            if self.milvus.collection_name != self.collection_name:
-                self.milvus.collection_name = self.collection_name
-            else:
-                self.collection_name = self.milvus.collection_name
+            # Sync milvus config to top-level for backward compatibility
+            self.host = self.milvus.host
+            self.port = self.milvus.port
+            self.collection_name = self.milvus.collection_name
         except Exception:
             # Be defensive: don't let post-init syncing break settings loading
             pass

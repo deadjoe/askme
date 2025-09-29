@@ -26,13 +26,21 @@ class TestDatabaseConfig:
         assert config.milvus.collection_name == "askme_hybrid"
 
     def test_custom_values(self: Any) -> None:
-        """Test custom configuration values."""
+        """Test custom configuration values via nested config."""
+        # Top-level values are synced from milvus config in model_post_init
         config = DatabaseConfig(
-            host="custom-host", port=9999, collection_name="custom_collection"
+            milvus=DatabaseConfig.MilvusConfig(
+                host="custom-host", port=9999, collection_name="custom_collection"
+            )
         )
+        # Top-level should sync from milvus config
         assert config.host == "custom-host"
         assert config.port == 9999
         assert config.collection_name == "custom_collection"
+        # Milvus config should have the custom values
+        assert config.milvus.host == "custom-host"
+        assert config.milvus.port == 9999
+        assert config.milvus.collection_name == "custom_collection"
 
 
 class TestEmbeddingConfig:
