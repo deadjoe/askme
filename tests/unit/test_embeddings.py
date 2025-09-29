@@ -9,15 +9,71 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from askme.core.config import EmbeddingConfig
-from askme.core.embeddings import BGEEmbeddingService, EmbeddingManager
+from askme.core.embeddings import (
+    BGEEmbeddingService,
+    EmbeddingManager,
+    HybridEmbeddingService,
+    Qwen3EmbeddingService,
+    create_embedding_backend,
+)
+
+
+class TestEmbeddingFactory:
+    """Test embedding backend factory."""
+
+    def test_default_returns_hybrid(self: Any) -> None:
+        config = EmbeddingConfig()
+        backend = create_embedding_backend(config)
+        assert isinstance(backend, HybridEmbeddingService)
+        assert backend.supports_sparse is True
+
+    def test_explicit_bge_backend(self: Any) -> None:
+        config = EmbeddingConfig(
+            backend="bge_m3",
+            model="BAAI/bge-m3",
+            model_name="bge-m3",
+            dimension=1024,
+        )
+        backend = create_embedding_backend(config)
+        assert isinstance(backend, BGEEmbeddingService)
+        assert backend.supports_sparse is True
+
+    def test_qwen3_backend_resolution(self: Any) -> None:
+        config = EmbeddingConfig(
+            backend="qwen3-embedding-small",
+            model="Qwen/Qwen3-Embedding-Small",
+            dimension=1536,
+        )
+        backend = create_embedding_backend(config)
+        assert isinstance(backend, HybridEmbeddingService)
+        assert backend.supports_sparse is True
+
+    def test_qwen3_dense_only_backend(self: Any) -> None:
+        config = EmbeddingConfig(
+            backend="qwen3_dense_only",
+            model="Qwen/Qwen3-Embedding-Small",
+            dimension=1536,
+        )
+        backend = create_embedding_backend(config)
+        assert isinstance(backend, Qwen3EmbeddingService)
+        assert backend.supports_sparse is False
 
 
 class TestBGEEmbeddingService:
     """Test BGE embedding service."""
 
+    def _bge_config(self: Any) -> EmbeddingConfig:
+        return EmbeddingConfig(
+            backend="bge_m3",
+            model="BAAI/bge-m3",
+            model_name="bge-m3",
+            dimension=1024,
+            batch_size=16,
+        )
+
     def test_service_creation(self: Any) -> None:
         """Test creating embedding service."""
-        config = EmbeddingConfig(model="BAAI/bge-m3", dimension=1024, batch_size=16)
+        config = self._bge_config()
         service = BGEEmbeddingService(config)
 
         assert service.config.model == "BAAI/bge-m3"
@@ -33,7 +89,7 @@ class TestBGEEmbeddingService:
         mock_model = MagicMock()
         mock_model_class.return_value = mock_model
 
-        config = EmbeddingConfig()
+        config = self._bge_config()
         service = BGEEmbeddingService(config)
 
         await service.initialize()
@@ -49,7 +105,7 @@ class TestBGEEmbeddingService:
         mock_model.encode.return_value = {"dense_vecs": [[0.1, 0.2, 0.3]]}
         mock_model_class.return_value = mock_model
 
-        config = EmbeddingConfig()
+        config = self._bge_config()
         service = BGEEmbeddingService(config)
         service.model = mock_model
         service._is_initialized = True
@@ -69,7 +125,7 @@ class TestBGEEmbeddingService:
         }
         mock_model_class.return_value = mock_model
 
-        config = EmbeddingConfig()
+        config = self._bge_config()
         service = BGEEmbeddingService(config)
         service.model = mock_model
         service._is_initialized = True
@@ -82,10 +138,19 @@ class TestBGEEmbeddingService:
 class TestEmbeddingManager:
     """Test embedding manager with caching."""
 
+    def _bge_service(self: Any) -> BGEEmbeddingService:
+        config = EmbeddingConfig(
+            backend="bge_m3",
+            model="BAAI/bge-m3",
+            model_name="bge-m3",
+            dimension=1024,
+            batch_size=16,
+        )
+        return BGEEmbeddingService(config)
+
     def test_manager_creation(self: Any) -> None:
         """Test creating embedding manager."""
-        config = EmbeddingConfig()
-        service = BGEEmbeddingService(config)
+        service = self._bge_service()
         manager = EmbeddingManager(service)
 
         assert manager.embedding_service == service
@@ -94,8 +159,7 @@ class TestEmbeddingManager:
 
     async def test_cache_behavior(self: Any) -> None:
         """Test embedding caching behavior."""
-        config = EmbeddingConfig()
-        service = BGEEmbeddingService(config)
+        service = self._bge_service()
         # Mock the new batch processing method instead of individual methods
         mock_embedding = {
             "text": "test text",
@@ -120,8 +184,7 @@ class TestEmbeddingManager:
 
     async def test_batch_processing(self: Any) -> None:
         """Test batch embedding processing."""
-        config = EmbeddingConfig()
-        service = BGEEmbeddingService(config)
+        service = self._bge_service()
         cast(Any, service).get_dense_embedding = AsyncMock(return_value=[0.1, 0.2])
         cast(Any, service).get_sparse_embedding = AsyncMock(return_value={1: 0.5})
 
@@ -506,7 +569,117 @@ class TestBGEEmbeddingServiceAdvanced:
 
     def test_device_selection_cpu(self: Any) -> None:
         """Test CPU device selection when CUDA unavailable."""
-        with patch("torch.cuda.is_available", return_value=False):
+        with (
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_available", return_value=False),
+        ):
             config = EmbeddingConfig()
             service = BGEEmbeddingService(config)
             assert service.device == "cpu"
+
+
+class TestHybridEmbeddingService:
+    """Test hybrid embedding service with Qwen3 + BGE-M3."""
+
+    @patch("askme.core.embeddings.BGEEmbeddingService.initialize")
+    @patch("askme.core.embeddings.Qwen3EmbeddingService.initialize")
+    async def test_initialization(
+        self: Any, mock_qwen_init: AsyncMock, mock_bge_init: AsyncMock
+    ) -> None:
+        """Test hybrid service initializes both backends."""
+        config = EmbeddingConfig()
+        service = HybridEmbeddingService(config)
+
+        await service.initialize()
+
+        assert service._is_initialized is True
+        mock_qwen_init.assert_called_once()
+        mock_bge_init.assert_called_once()
+
+    @patch("askme.core.embeddings.BGEEmbeddingService.encode_query")
+    @patch("askme.core.embeddings.Qwen3EmbeddingService.encode_query")
+    async def test_encode_query_combines_embeddings(
+        self: Any, mock_qwen_encode: AsyncMock, mock_bge_encode: AsyncMock
+    ) -> None:
+        """Test query encoding combines dense (Qwen3) + sparse (BGE-M3)."""
+        config = EmbeddingConfig()
+        service = HybridEmbeddingService(config)
+        service._is_initialized = True
+
+        # Mock responses
+        mock_qwen_encode.return_value = {
+            "query": "test query",
+            "dense_embedding": [0.1, 0.2, 0.3],
+            "sparse_embedding": {},
+            "embedding_dim": 3,
+        }
+        mock_bge_encode.return_value = {
+            "query": "test query",
+            "dense_embedding": [0.4, 0.5, 0.6],  # ignored
+            "sparse_embedding": {1: 0.7, 2: 0.8},
+            "embedding_dim": 3,
+        }
+
+        result = await service.encode_query("test query")
+
+        assert result["query"] == "test query"
+        assert result["dense_embedding"] == [0.1, 0.2, 0.3]  # from Qwen3
+        assert result["sparse_embedding"] == {1: 0.7, 2: 0.8}  # from BGE-M3
+        assert result["embedding_dim"] == 3
+
+    @patch("askme.core.embeddings.BGEEmbeddingService.encode_documents")
+    @patch("askme.core.embeddings.Qwen3EmbeddingService.encode_documents")
+    async def test_encode_documents_combines_embeddings(
+        self: Any, mock_qwen_encode: AsyncMock, mock_bge_encode: AsyncMock
+    ) -> None:
+        """Test document encoding combines dense + sparse embeddings."""
+        config = EmbeddingConfig()
+        service = HybridEmbeddingService(config)
+        service._is_initialized = True
+
+        # Mock responses
+        mock_qwen_encode.return_value = [
+            {
+                "text": "doc1",
+                "dense_embedding": [0.1, 0.2],
+                "sparse_embedding": {},
+                "embedding_dim": 2,
+            }
+        ]
+        mock_bge_encode.return_value = [
+            {
+                "text": "doc1",
+                "dense_embedding": [0.3, 0.4],  # ignored
+                "sparse_embedding": {1: 0.5},
+                "embedding_dim": 2,
+            }
+        ]
+
+        result = await service.encode_documents(["doc1"])
+
+        assert len(result) == 1
+        assert result[0]["text"] == "doc1"
+        assert result[0]["dense_embedding"] == [0.1, 0.2]  # from Qwen3
+        assert result[0]["sparse_embedding"] == {1: 0.5}  # from BGE-M3
+
+    def test_supports_sparse(self: Any) -> None:
+        """Test hybrid service supports sparse vectors."""
+        config = EmbeddingConfig()
+        service = HybridEmbeddingService(config)
+        assert service.supports_sparse is True
+
+    @patch("askme.core.embeddings.BGEEmbeddingService.cleanup")
+    @patch("askme.core.embeddings.Qwen3EmbeddingService.cleanup")
+    async def test_cleanup_both_services(
+        self: Any, mock_qwen_cleanup: AsyncMock, mock_bge_cleanup: AsyncMock
+    ) -> None:
+        """Test cleanup calls both services."""
+        config = EmbeddingConfig()
+        service = HybridEmbeddingService(config)
+        service._is_initialized = True
+
+        await service.cleanup()
+
+        mock_qwen_cleanup.assert_called_once()
+        mock_bge_cleanup.assert_called_once()
+        assert service._is_initialized is False

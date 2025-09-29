@@ -15,7 +15,9 @@ from fastapi.testclient import TestClient
 def _build_patched_app() -> FastAPI:
     # Patch heavy components referenced inside lifespan
     with (
-        patch("askme.api.main.BGEEmbeddingService", autospec=True) as _emb,
+        patch(
+            "askme.api.main.create_embedding_backend", autospec=True
+        ) as _create_embedding,
         patch("askme.api.main.MilvusRetriever", autospec=True),
         patch("askme.api.main.WeaviateRetriever", autospec=True),
         patch("askme.api.main.RerankingService", autospec=True) as _rr,
@@ -31,7 +33,11 @@ def _build_patched_app() -> FastAPI:
         _rr.return_value.cleanup = AsyncMock()
         _ing.return_value.initialize = AsyncMock()
         _ing.return_value.shutdown = AsyncMock()
-        _emb.return_value.cleanup = AsyncMock()
+
+        embedding_mock = MagicMock()
+        embedding_mock.cleanup = AsyncMock()
+        embedding_mock.supports_sparse = False
+        _create_embedding.return_value = embedding_mock
 
         # Import module and construct app
         from askme.api.main import create_app

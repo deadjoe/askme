@@ -33,7 +33,9 @@ from askme.core.config import Settings
 def mock_settings() -> Any:
     """Mock settings for testing."""
     settings = MagicMock(spec=Settings)
-    settings.rerank.cohere_enabled = False
+    settings.rerank.local_backend = "qwen_local"
+    settings.rerank.local_enabled = True
+    settings.rerank.local_model = "Qwen/Qwen3-Reranker-8B"
     return settings
 
 
@@ -102,7 +104,7 @@ class TestRetrievalDebugInfoModel:
             fusion_method="rrf",
             alpha=0.5,
             rrf_k=60,
-            rerank_model="bge_local",
+            rerank_model="qwen_local",
             rerank_scores=[0.9, 0.8, 0.7],
             latency_ms=1200,
             embedding_latency_ms=150,
@@ -116,7 +118,7 @@ class TestRetrievalDebugInfoModel:
         assert debug.fusion_method == "rrf"
         assert debug.alpha == 0.5
         assert debug.rrf_k == 60
-        assert debug.rerank_model == "bge_local"
+        assert debug.rerank_model == "qwen_local"
         assert debug.rerank_scores == [0.9, 0.8, 0.7]
         assert debug.latency_ms == 1200
         assert debug.overlap_hits == 15
@@ -127,7 +129,7 @@ class TestRetrievalDebugInfoModel:
             bm25_hits=10,
             dense_hits=15,
             fusion_method="alpha",
-            rerank_model="cohere",
+            rerank_model="qwen_local",
             latency_ms=800,
             embedding_latency_ms=100,
             search_latency_ms=600,
@@ -155,7 +157,7 @@ class TestQueryRequestModel:
         assert req.rrf_k == 60
         assert req.use_hyde is False
         assert req.use_rag_fusion is False
-        assert req.reranker == "bge_local"
+        assert req.reranker == "qwen_local"
         assert req.max_passages == 8
         assert req.filters is None
         assert req.include_debug is False
@@ -171,7 +173,7 @@ class TestQueryRequestModel:
             rrf_k=80,
             use_hyde=True,
             use_rag_fusion=True,
-            reranker="cohere",
+            reranker="bge_local",
             max_passages=5,
             filters={"tag": "important"},
             include_debug=True,
@@ -244,38 +246,6 @@ class TestQueryDocuments:
     """Test query_documents endpoint function."""
 
     @pytest.mark.asyncio
-    async def test_cohere_validation_error(
-        self: Any, mock_request: MagicMock, mock_settings: MagicMock
-    ) -> None:
-        """Test Cohere reranker validation error."""
-        req = QueryRequest(q="test query", reranker="cohere")
-        mock_settings.rerank.cohere_enabled = False
-
-        with pytest.raises(HTTPException) as exc_info:
-            await query_documents(req, cast(Request, mock_request), mock_settings)
-
-        assert exc_info.value.status_code == 400
-        assert "Cohere reranker not enabled" in str(exc_info.value.detail)
-
-    @pytest.mark.asyncio
-    async def test_cohere_enabled_passes_validation(
-        self: Any, mock_request: MagicMock, mock_settings: MagicMock
-    ) -> None:
-        """Test that Cohere validation passes when enabled."""
-        req = QueryRequest(q="test query", reranker="cohere")
-        mock_settings.rerank.cohere_enabled = True
-
-        # Should not raise HTTPException for Cohere validation
-        # Will fall back to mock response due to missing services
-        response = await query_documents(
-            req, cast(Request, mock_request), mock_settings
-        )
-
-        assert isinstance(response, QueryResponse)
-        assert response.answer is not None
-        assert len(response.citations) > 0
-
-    @pytest.mark.asyncio
     async def test_mock_response_fallback(
         self: Any, mock_request: MagicMock, mock_settings: MagicMock
     ) -> None:
@@ -285,7 +255,7 @@ class TestQueryDocuments:
             include_debug=True,
             use_rrf=False,
             alpha=0.7,
-            reranker="bge_local",
+            reranker="qwen_local",
         )
 
         response = await query_documents(
@@ -310,7 +280,7 @@ class TestQueryDocuments:
         assert response.retrieval_debug.fusion_method == "alpha"
         assert response.retrieval_debug.alpha == 0.7
         assert response.retrieval_debug.rrf_k is None
-        assert response.retrieval_debug.rerank_model == "bge_local"
+        assert response.retrieval_debug.rerank_model == "qwen_local"
 
         # Check response structure
         assert isinstance(response.timestamp, datetime)
@@ -445,7 +415,7 @@ class TestRetrieveDocuments:
         assert response.retrieval_debug.fusion_method == "alpha"
         assert response.retrieval_debug.alpha == 0.3
         assert response.retrieval_debug.rrf_k == 40
-        assert response.retrieval_debug.rerank_model == "bge_local"
+        assert response.retrieval_debug.rerank_model == "qwen_local"
         assert response.retrieval_debug.rerank_latency_ms == 0
 
         # Check response structure
@@ -553,7 +523,7 @@ class TestResponseModels:
             bm25_hits=10,
             dense_hits=15,
             fusion_method="rrf",
-            rerank_model="bge_local",
+            rerank_model="qwen_local",
             latency_ms=800,
             embedding_latency_ms=100,
             search_latency_ms=600,
@@ -591,7 +561,7 @@ class TestResponseModels:
             dense_hits=25,
             fusion_method="alpha",
             alpha=0.5,
-            rerank_model="cohere",
+            rerank_model="qwen_local",
             latency_ms=1000,
             embedding_latency_ms=200,
             search_latency_ms=700,

@@ -220,6 +220,7 @@ class TestMilvusRetrieverCore:
                 # Mock collection
                 mock_collection = MagicMock()
                 retriever.collection = mock_collection
+                retriever.has_sparse_vector = True
 
                 # Mock search results
                 mock_hit = MagicMock()
@@ -270,6 +271,7 @@ class TestMilvusRetrieverCore:
             with patch("askme.retriever.milvus_retriever.connections"):
                 mock_collection = MagicMock()
                 retriever.collection = mock_collection
+                retriever.has_sparse_vector = True
 
                 # Mock search results
                 mock_hit = MagicMock()
@@ -446,6 +448,7 @@ class TestMilvusRetrieverHybridSearch:
             with patch("askme.retriever.milvus_retriever.connections"):
                 mock_collection = MagicMock()
                 retriever.collection = mock_collection
+                retriever.has_sparse_vector = True
 
                 # Mock that RRF is available
                 with patch(
@@ -491,6 +494,7 @@ class TestMilvusRetrieverHybridSearch:
                 # Mock collection and force fallback to alpha fusion
                 mock_collection = MagicMock()
                 retriever.collection = mock_collection
+                retriever.has_sparse_vector = True
 
                 with patch(
                     "askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", False
@@ -522,6 +526,7 @@ class TestMilvusRetrieverHybridSearch:
 
                             mock_dense.return_value = dense_results
                             mock_sparse.return_value = sparse_results
+                            retriever.has_sparse_vector = True
 
                             query_embedding = [0.1] * 1024
                             query_terms = {1: 0.8}
@@ -578,6 +583,15 @@ class TestMilvusRetrieverEdgeCases:
         with pytest.raises((RuntimeError, AttributeError)):
             await retriever.get_document("test")
 
+    @pytest.mark.asyncio
+    async def test_sparse_search_disabled_returns_empty(self: Any) -> None:
+        """Sparse search should no-op when sparse vectors are unavailable."""
+        retriever = MilvusRetriever({"collection_name": "no_sparse"})
+        retriever.collection = MagicMock()
+        retriever.has_sparse_vector = False
+        results = await retriever.sparse_search({1: 0.5})
+        assert results == []
+
     def test_config_edge_cases(self: Any) -> None:
         """Test configuration edge cases."""
         # Minimal config
@@ -603,6 +617,7 @@ class TestMilvusRetrieverEdgeCases:
 
         mock_collection = MagicMock()
         retriever.collection = mock_collection
+        retriever.has_sparse_vector = True
 
         # Document without embedding
         doc_no_embedding = Document(id="no_embed", content="No embedding", metadata={})
@@ -617,6 +632,24 @@ class TestMilvusRetrieverEdgeCases:
 
         with pytest.raises(ValueError, match="missing sparse embedding"):
             await retriever.insert_documents([doc_no_sparse])
+
+        # Dense-only backend should bypass sparse requirement
+        retriever.has_sparse_vector = False
+        retriever.expect_sparse = False
+        dense_only_doc = Document(
+            id="dense_only",
+            content="Dense only document",
+            metadata={},
+            embedding=[0.2] * 1024,
+        )
+        with (
+            patch.object(
+                retriever, "_safe_upsert", AsyncMock(return_value=["dense_only"])
+            ),
+            patch.object(retriever, "_should_flush", AsyncMock(return_value=False)),
+        ):
+            result = await retriever.insert_documents([dense_only_doc])
+            assert result == ["dense_only"]
 
 
 class TestMilvusRetrieverIntegration:
