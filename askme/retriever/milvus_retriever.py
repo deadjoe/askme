@@ -55,11 +55,17 @@ class MilvusRetriever(VectorRetriever):
         self.connection_name = f"askme_conn_{hash(f'{self.host}: {self.port}')}"
         self.collection: Optional[Collection] = None
         self.dimension = config.get("dimension", 1024)
+        self.expect_sparse = config.get("expects_sparse", True)
+        self.has_sparse_vector = False
 
     @property
     def supports_native_upsert(self) -> bool:
         """Milvus 2.6+ supports native upsert operations."""
         return True
+
+    @property
+    def supports_sparse(self) -> bool:
+        return self.has_sparse_vector
 
     async def connect(self) -> None:
         """Connect to Milvus server."""
@@ -80,7 +86,14 @@ class MilvusRetriever(VectorRetriever):
                     name=self.collection_name, using=self.connection_name
                 )
                 self.collection.load()
+                self._refresh_schema_capabilities()
                 logger.info(f"Loaded existing collection: {self.collection_name}")
+                if not self.has_sparse_vector and self.expect_sparse:
+                    logger.warning(
+                        "Milvus collection %s does not expose sparse_vector field; "
+                        "hybrid retrieval will fallback to dense-only.",
+                        self.collection_name,
+                    )
 
         except Exception as e:
             logger.error(f"Failed to connect to Milvus: {e}")
@@ -96,6 +109,26 @@ class MilvusRetriever(VectorRetriever):
         except Exception as e:
             logger.warning(f"Error disconnecting from Milvus: {e}")
 
+    def _refresh_schema_capabilities(self) -> None:
+        """Detect whether the active collection includes sparse vector support."""
+
+        self.has_sparse_vector = False
+        if not self.collection:
+            return
+
+        try:
+            schema = getattr(self.collection, "schema", None)
+            if not schema:
+                return
+            fields = getattr(schema, "fields", [])
+            for field in fields:
+                name = getattr(field, "name", "")
+                if name == "sparse_vector":
+                    self.has_sparse_vector = True
+                    break
+        except Exception as exc:
+            logger.debug("Failed to inspect Milvus schema for sparse support: %s", exc)
+
     async def create_collection(
         self, dimension: int, metric: str = "cosine", **kwargs: Any
     ) -> None:
@@ -105,7 +138,7 @@ class MilvusRetriever(VectorRetriever):
                 logger.info(f"Collection {self.collection_name} already exists")
                 return
 
-            # Define collection schema with support for dense, sparse, and metadata
+            # Define collection schema with support for dense vectors and metadata
             fields = [
                 FieldSchema(
                     name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64
@@ -114,9 +147,15 @@ class MilvusRetriever(VectorRetriever):
                 FieldSchema(
                     name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=dimension
                 ),
-                FieldSchema(name="sparse_vector", dtype=DataType.SPARSE_FLOAT_VECTOR),
                 FieldSchema(name="metadata", dtype=DataType.JSON),
             ]
+
+            if self.expect_sparse:
+                fields.append(
+                    FieldSchema(
+                        name="sparse_vector", dtype=DataType.SPARSE_FLOAT_VECTOR
+                    )
+                )
 
             schema = CollectionSchema(
                 fields=fields,
@@ -142,20 +181,22 @@ class MilvusRetriever(VectorRetriever):
                 index_name="dense_idx",
             )
 
-            # Sparse vector index for sparse search using IP metric type
-            sparse_index_params = {
-                "index_type": "SPARSE_INVERTED_INDEX",
-                "metric_type": "IP",  # IP metric for sparse vector search
-                "params": {},
-            }
-            collection.create_index(
-                field_name="sparse_vector",
-                index_params=sparse_index_params,
-                index_name="sparse_idx",
-            )
+            if self.expect_sparse:
+                # Sparse vector index for sparse search using IP metric type
+                sparse_index_params = {
+                    "index_type": "SPARSE_INVERTED_INDEX",
+                    "metric_type": "IP",  # IP metric for sparse vector search
+                    "params": {},
+                }
+                collection.create_index(
+                    field_name="sparse_vector",
+                    index_params=sparse_index_params,
+                    index_name="sparse_idx",
+                )
 
             self.collection = collection
             self.collection.load()
+            self.has_sparse_vector = self.expect_sparse
 
             logger.info(
                 f"Created collection {self.collection_name} with hybrid search support"
@@ -192,18 +233,25 @@ class MilvusRetriever(VectorRetriever):
                 for doc in batch_docs:
                     if not doc.embedding:
                         raise ValueError(f"Document {doc.id} missing dense embedding")
-                    if not doc.sparse_embedding:
-                        raise ValueError(f"Document {doc.id} missing sparse embedding")
+                    sparse_payload = doc.sparse_embedding
+                    if self.has_sparse_vector:
+                        if not sparse_payload:
+                            if self.expect_sparse:
+                                raise ValueError(
+                                    f"Document {doc.id} missing sparse embedding"
+                                )
+                            sparse_payload = {}
 
-                    data.append(
-                        {
-                            "id": doc.id,
-                            "content": doc.content,
-                            "dense_vector": doc.embedding,
-                            "sparse_vector": doc.sparse_embedding,
-                            "metadata": doc.metadata,
-                        }
-                    )
+                    record = {
+                        "id": doc.id,
+                        "content": doc.content,
+                        "dense_vector": doc.embedding,
+                        "metadata": doc.metadata,
+                    }
+                    if self.has_sparse_vector:
+                        record["sparse_vector"] = sparse_payload or {}
+
+                    data.append(record)
                     doc_ids.append(doc.id)
 
                 # Safe upsert for this batch
@@ -512,6 +560,10 @@ class MilvusRetriever(VectorRetriever):
         if not self.collection:
             raise RuntimeError("Collection not initialized")
 
+        if not self.has_sparse_vector:
+            logger.debug("Sparse search requested but sparse vectors are disabled")
+            return []
+
         try:
             search_params = {
                 "metric_type": "IP",
@@ -565,6 +617,17 @@ class MilvusRetriever(VectorRetriever):
         params: HybridSearchParams,
     ) -> List[RetrievalResult]:
         """Perform hybrid search using Milvus 2.5 hybrid capabilities."""
+
+        if not self.has_sparse_vector:
+            logger.info(
+                "Sparse embeddings unavailable; falling back to dense search only"
+            )
+            dense_results = await self.dense_search(
+                query_embedding, params.topk, params.filters
+            )
+            for result in dense_results:
+                result.retrieval_method = "dense_only"
+            return dense_results
         if not self.collection:
             raise RuntimeError("Collection not initialized")
 

@@ -31,6 +31,7 @@ class WeaviateRetriever(VectorRetriever):
         self.client: Optional[weaviate.WeaviateClient] = None
         self.collection = None
         self.dimension = config.get("dimension", 1024)
+        self.expect_sparse = config.get("expects_sparse", True)
 
     @property
     def supports_native_upsert(self) -> bool:
