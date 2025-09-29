@@ -140,7 +140,7 @@ impl Default for QueryRequest {
             rrf_k: 60,
             use_hyde: false,
             use_rag_fusion: false,
-            reranker: "bge_local".to_string(),
+            reranker: "qwen_local".to_string(),
             max_passages: 8,
             include_debug: false,
         }
@@ -263,20 +263,20 @@ impl std::fmt::Display for OutputFormat {
 /// Reranker model options
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reranker {
+    QwenLocal,
     BgeLocal,
-    Cohere,
 }
 
 impl Reranker {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::QwenLocal => "qwen_local",
             Self::BgeLocal => "bge_local",
-            Self::Cohere => "cohere",
         }
     }
 
     pub fn variants() -> &'static [Self] {
-        &[Self::BgeLocal, Self::Cohere]
+        &[Self::QwenLocal, Self::BgeLocal]
     }
 }
 
@@ -291,8 +291,8 @@ impl std::str::FromStr for Reranker {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "qwen_local" => Ok(Self::QwenLocal),
             "bge_local" => Ok(Self::BgeLocal),
-            "cohere" => Ok(Self::Cohere),
             _ => Err(format!("Invalid reranker: {}", s)),
         }
     }
@@ -315,13 +315,13 @@ mod tests {
         assert_eq!(req.topk, 50);
         assert_eq!(req.alpha, 0.5);
         assert!(req.use_rrf);
-        assert_eq!(req.reranker, "bge_local");
+        assert_eq!(req.reranker, "qwen_local");
     }
 
     #[test]
     fn test_reranker_parsing() {
+        assert_eq!("qwen_local".parse::<Reranker>().unwrap(), Reranker::QwenLocal);
         assert_eq!("bge_local".parse::<Reranker>().unwrap(), Reranker::BgeLocal);
-        assert_eq!("cohere".parse::<Reranker>().unwrap(), Reranker::Cohere);
         assert!("invalid".parse::<Reranker>().is_err());
     }
 

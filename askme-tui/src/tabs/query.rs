@@ -90,7 +90,10 @@ impl QueryTab {
             rrf_k: default_request.rrf_k,
             use_hyde: default_request.use_hyde,
             use_rag_fusion: default_request.use_rag_fusion,
-            reranker: default_request.reranker.parse().unwrap_or(Reranker::BgeLocal),
+            reranker: default_request
+                .reranker
+                .parse()
+                .unwrap_or(Reranker::QwenLocal),
             max_passages: default_request.max_passages,
             include_debug: default_request.include_debug,
             output_format: OutputFormat::Text,
@@ -216,8 +219,8 @@ impl QueryTab {
                             match self.focused_field {
                                 QueryField::Reranker => {
                                     self.reranker = match self.reranker {
-                                        Reranker::BgeLocal => Reranker::Cohere,
-                                        Reranker::Cohere => Reranker::BgeLocal,
+                                        Reranker::QwenLocal => Reranker::BgeLocal,
+                                        Reranker::BgeLocal => Reranker::QwenLocal,
                                     };
                                 }
                                 QueryField::OutputFormat => {
@@ -346,11 +349,11 @@ impl QueryTab {
                 // Toggle between reranker options
                 if c == ' ' {
                     self.reranker = match self.reranker {
-                        Reranker::BgeLocal => Reranker::Cohere,
-                        Reranker::Cohere => Reranker::BgeLocal,
+                        Reranker::QwenLocal => Reranker::BgeLocal,
+                        Reranker::BgeLocal => Reranker::QwenLocal,
                     };
                 } else if c == 'r' || c == 'R' {
-                    self.reranker = Reranker::BgeLocal;
+                    self.reranker = Reranker::QwenLocal;
                 }
             }
             QueryField::OutputFormat => {

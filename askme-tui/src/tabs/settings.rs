@@ -116,7 +116,7 @@ impl SettingsTab {
             rrf_k: self.default_rrf_k,
             use_hyde: false,
             use_rag_fusion: false,
-            reranker: "bge_local".to_string(),
+            reranker: "qwen_local".to_string(),
             max_passages: self.default_max_passages,
             include_debug: false,
         };
