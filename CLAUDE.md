@@ -3,7 +3,7 @@
 ## Project Overview
 AskMe is a production-ready hybrid RAG (Retrieval-Augmented Generation) system that implements:
 - **Hybrid Search**: BM25/sparse + dense vector retrieval with configurable fusion (alpha/RRF)
-- **Intelligent Reranking**: Local BGE-reranker-v2.5 + Cohere Rerank 3.5 fallback
+- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback
 - **Query Enhancement**: HyDE and RAG-Fusion for improved recall
 - **Comprehensive Evaluation**: TruLens RAG Triad + Ragas metrics
 - **Multi-backend Support**: Weaviate (primary) / Milvus 2.5+ / Qdrant
@@ -15,10 +15,10 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 ```
 
 ## Key Technologies
-- **Embeddings**: BGE-M3 (multilingual, sparse+dense)
+- **Embeddings**: Default Qwen3-Embedding-8B dense encoder with optional BGE-M3 hybrid encoder when sparse vectors are required
 - **Vector DB**: Weaviate (primary) with hybrid search support
-- **Reranker**: BAAI/bge-reranker-v2.5-gemma2-lightweight (local)
-- **Fallback**: Cohere Rerank 3.5 (cloud, requires ASKME_ENABLE_COHERE=1)
+- **Reranker**: Qwen/Qwen3-Reranker-8B (local)
+- **Fallback**: Optional BGE reranker for sparse-aware scenarios
 - **Evaluation**: TruLens + Ragas v0.2+
 - **Framework**: FastAPI + Python 3.10+
 - **Local LLM (optional)**: Ollama (enable via ASKME_ENABLE_OLLAMA=1)
@@ -43,7 +43,7 @@ scripts/retrieve.sh "your question here" --alpha=0.5 --topk=50
 scripts/answer.sh "complex question" --hyde --fusion --max-passages=8
 
 # Reranking only
-scripts/rerank.sh --model=bge_local --take=8
+scripts/rerank.sh --model=qwen_local --take=8
 ```
 
 ### Evaluation
@@ -64,8 +64,9 @@ Primary config: `configs/askme.yaml`
 Key parameters:
 - `hybrid.alpha`: 0.5 (equal weight), >0.5 (dense bias), <0.5 (sparse bias)
 - `hybrid.rrf_k`: 60 (RRF fusion parameter)
-- `rerank.local_model`: BGE-reranker path
-- `embedding.model`: BAAI/bge-m3
+- `rerank.local_model`: Qwen3 reranker model path
+- `embedding.model`: Qwen/Qwen3-Embedding-8B
+- `embedding.backend`: qwen3 (set to `bge_m3` to enable sparse-aware embeddings)
 
 ## Development Workflow
 
@@ -145,7 +146,7 @@ pytest askme/tests/e2e/ --slow
 
 ### Common Issues
 1. **Slow retrieval**: Check hybrid parameters, consider RRF vs alpha
-2. **Poor reranking**: Verify local model loading, check Cohere fallback
+2. **Poor reranking**: Verify local model loading, swap between Qwen3/BGE as needed
 3. **Memory issues**: Adjust batch sizes in configs/askme.yaml
 4. **Evaluation failures**: Check TruLens/Ragas versions and API keys
 
@@ -153,10 +154,9 @@ pytest askme/tests/e2e/ --slow
 ```bash
 # Required
 ASKME_VECTOR_BACKEND=weaviate  # or milvus, qdrant
-ASKME_EMBEDDING_MODEL=BAAI/bge-m3
+ASKME_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
 
 # Optional
-ASKME_ENABLE_COHERE=1        # Enable Cohere reranking
 ASKME_ENABLE_OLLAMA=1        # Enable local Ollama generator
 ASKME_LOG_LEVEL=INFO
 ASKME_BATCH_SIZE=32
