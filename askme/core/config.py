@@ -84,30 +84,45 @@ class HybridConfig(BaseSettings):
 class EmbeddingConfig(BaseSettings):
     """Embedding model configuration."""
 
-    model: str = "BAAI/bge-m3"
-    model_name: str = "bge-m3"
-    dimension: int = 1024
+    backend: str = "qwen3-hybrid"
+    model: str = "Qwen/Qwen3-Embedding-8B"
+    model_name: str = "qwen3-hybrid"
+    dimension: int = 4096
     max_length: int = 8192
     normalize_embeddings: bool = True
-    batch_size: int = 32
+    batch_size: int = 16
     use_fp16: bool = True
-    pooling_method: str = "cls"
+    pooling_method: str = "last_token"
     query_instruction: str = ""
     passage_instruction: str = ""
+
+    class SparseConfig(BaseSettings):
+        enabled: bool = True
+        backend: str = "bge_m3"
+        model: str = "BAAI/bge-m3"
+        dimension: int = 1024
+        batch_size: int = 4  # BGE-M3 optimal for corpus processing
+        query_batch_size: int = 12  # BGE-M3 optimal for query processing
+        max_length: int = 8192  # BGE-M3 official optimal
+        use_fp16: bool = True
+
+    sparse: SparseConfig = SparseConfig()
 
 
 class RerankConfig(BaseSettings):
     """Reranking configuration."""
 
-    local_model: str = "BAAI/bge-reranker-v2-m3"
+    local_backend: str = "qwen_local"  # qwen_local | bge_local
+    local_model: str = "Qwen/Qwen3-Reranker-8B"
     local_enabled: bool = True
-    local_batch_size: int = 16
-    local_max_length: int = 1024
+    local_batch_size: int = 8  # Qwen3-Reranker optimal batch size
+    local_max_length: int = 1024  # Optimized length
+    local_instruction: str = (
+        "Given a web search query, retrieve relevant passages that answer the query"
+    )
 
-    cohere_enabled: bool = False
-    cohere_model: str = "rerank-3.5-turbo"
-    cohere_max_chunks_per_doc: int = 10
-    cohere_return_documents: bool = True
+    local_use_fp16: bool = True
+    local_flash_attention: bool = False
 
     top_n: int = 8
     score_threshold: float = 0.0
@@ -283,9 +298,11 @@ class PerformanceConfig(BaseSettings):
         max_size: int = 1000
 
     class BatchConfig(BaseSettings):
-        embedding_batch_size: int = 32
-        rerank_batch_size: int = 16
-        max_concurrent_requests: int = 10
+        embedding_batch_size: int = 16  # Balanced for Qwen3 dense processing
+        sparse_batch_size: int = 4  # BGE-M3 corpus optimal
+        query_batch_size: int = 12  # BGE-M3 query optimal
+        rerank_batch_size: int = 8  # Qwen3-Reranker-8B optimal
+        max_concurrent_requests: int = 8  # Reduced for memory management
 
     class TimeoutConfig(BaseSettings):
         embedding_timeout: int = 30
@@ -342,7 +359,6 @@ class Settings(BaseSettings):
     security: SecurityConfig = SecurityConfig()
 
     # Environment variable overrides (kept simple for typing and tests)
-    enable_cohere: bool = False
     enable_ollama: bool = False
     log_level: str = "INFO"
 
@@ -406,7 +422,7 @@ def get_settings() -> Settings:
 # object. With Pydantic BaseSettings, field attributes are provided on instances
 # but not necessarily present on the class __dict__. To make spec-based mocking in
 # tests like MagicMock(spec=Settings) work with attribute access such as
-# settings.rerank.cohere_enabled, we reattach representative attributes on the
+# settings.rerank.local_backend, we reattach representative attributes on the
 # class so they appear in dir(Settings).
 try:  # be defensive: don't raise at import time in production
     _mockable_attrs = [

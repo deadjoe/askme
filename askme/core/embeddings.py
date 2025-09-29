@@ -1,11 +1,10 @@
-"""
-BGE-M3 embedding service with sparse and dense vector generation.
-"""
+"""Embedding backends and manager utilities."""
 
 import asyncio
 import importlib
 import logging
 import warnings
+from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -19,11 +18,19 @@ warnings.filterwarnings(
     "ignore", message=".*XLMRobertaTokenizerFast.*", category=UserWarning
 )
 
-torch_module: ModuleType | None
+torch_module: Any = None
+torch_nn_functional: Any = None
 try:
     torch_module = importlib.import_module("torch")
+    torch_nn_functional = importlib.import_module("torch.nn.functional")
 except Exception:  # pragma: no cover
-    torch_module = None
+    pass
+
+transformers_module: Any = None
+try:
+    transformers_module = importlib.import_module("transformers")
+except Exception:  # pragma: no cover
+    transformers_module = None
 
 # Optional symbol for tests to patch without importing heavy deps at module import time
 try:  # pragma: no cover - provide patch point for tests
@@ -36,11 +43,48 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
-class BGEEmbeddingService:
-    """BGE-M3 embedding service with dense, sparse, and multi-vector support."""
+class EmbeddingBackend(ABC):
+    """Abstract base class for embedding backends."""
 
     def __init__(self, config: EmbeddingConfig):
         self.config = config
+
+    @property
+    def name(self) -> str:
+        return self.config.model
+
+    @property
+    def supports_sparse(self) -> bool:
+        return False
+
+    async def initialize(self) -> None:
+        raise NotImplementedError
+
+    async def encode_documents(
+        self, texts: List[str], batch_size: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    async def get_dense_embedding(self, text: str) -> List[float]:
+        raise NotImplementedError
+
+    async def get_sparse_embedding(self, text: str) -> Dict[int | str, float]:
+        raise NotImplementedError
+
+    async def encode_query(
+        self, query: str, instruction: Optional[str] = None
+    ) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def cleanup(self) -> None:
+        raise NotImplementedError
+
+
+class BGEEmbeddingService(EmbeddingBackend):
+    """BGE-M3 embedding service with dense, sparse, and multi-vector support."""
+
+    def __init__(self, config: EmbeddingConfig):
+        super().__init__(config)
         self.model: Any | None = None
         # Allow operation without torch installed (skip GPU detection)
         self.device = "cpu"  # fallback default
@@ -73,6 +117,10 @@ class BGEEmbeddingService:
             thread_name_prefix="bge-embed",
         )
 
+    @property
+    def supports_sparse(self) -> bool:
+        return True
+
     async def initialize(self) -> None:
         """Initialize the BGE-M3 model."""
         if self._is_initialized:
@@ -87,10 +135,14 @@ class BGEEmbeddingService:
                 from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel
 
                 BGEM3FlagModel = _BGEM3FlagModel
+            # BGE-M3 official optimal configuration
+            devices_list = [self.device] if self.device != "cpu" else ["cpu"]
             self.model = BGEM3FlagModel(
                 self.config.model,
                 use_fp16=(self.device != "cpu" and self.config.use_fp16),
-                devices=self.device,
+                devices=devices_list,  # BGE-M3 expects list of devices
+                normalize_embeddings=self.config.normalize_embeddings,
+                query_instruction_for_retrieval=None,  # Handle instructions separately
             )
 
             self._is_initialized = True
@@ -671,10 +723,395 @@ class BGEEmbeddingService:
             # Don't re-raise to avoid blocking shutdown
 
 
+class Qwen3EmbeddingService(EmbeddingBackend):
+    """Qwen3 embedding backend producing dense vectors only."""
+
+    def __init__(self, config: EmbeddingConfig):
+        super().__init__(config)
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.device = "cpu"
+        self._is_initialized = False
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="qwen3-embed",
+        )
+
+    @property
+    def supports_sparse(self) -> bool:
+        return False
+
+    async def initialize(self) -> None:
+        if self._is_initialized:
+            return
+
+        if transformers_module is None:
+            raise RuntimeError("transformers package is required for Qwen3 embeddings")
+        if torch_module is None:
+            raise RuntimeError("PyTorch is required for Qwen3 embeddings")
+
+        self.device = self._select_device()
+        torch_dtype = self._resolve_dtype()
+
+        AutoTokenizer = getattr(transformers_module, "AutoTokenizer")
+        AutoModel = getattr(transformers_module, "AutoModel")
+
+        logger.info(
+            "Loading Qwen3 embedding model %s on device %s",
+            self.config.model,
+            self.device,
+        )
+
+        # Qwen3 official recommendation: padding_side="left" for better performance
+        tokenizer_kwargs: Dict[str, Any] = {
+            "padding_side": "left",
+            "truncation_side": "right",
+            "model_max_length": self.config.max_length,
+        }
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.config.model,
+            trust_remote_code=True,
+            **tokenizer_kwargs,
+        )
+
+        model_kwargs: Dict[str, Any] = {
+            "torch_dtype": torch_dtype,
+            "trust_remote_code": True,
+        }
+        if self.device == "cuda":
+            model_kwargs.setdefault("device_map", "auto")
+        if self.device in {"cuda", "mps"} and self.config.use_fp16:
+            model_kwargs.setdefault("torch_dtype", torch_module.float16)
+
+        self.model = AutoModel.from_pretrained(self.config.model, **model_kwargs)
+        if self.device == "cuda":
+            self.model = self.model.cuda()
+        elif self.device == "mps":
+            self.model = self.model.to("mps")
+        else:
+            self.model = self.model.to("cpu")
+
+        self.model.eval()
+        self._is_initialized = True
+        logger.info("Qwen3 embedding model loaded successfully")
+
+    def _select_device(self) -> str:
+        if torch_module is None:
+            return "cpu"
+        if hasattr(torch_module, "cuda"):
+            cuda_mod = getattr(torch_module, "cuda")
+            is_available = getattr(cuda_mod, "is_available", None)
+            if callable(is_available) and is_available():
+                return "cuda"
+        if hasattr(torch_module, "backends") and hasattr(torch_module.backends, "mps"):
+            mps_mod = getattr(torch_module.backends, "mps")
+            is_available = getattr(mps_mod, "is_available", None)
+            if callable(is_available) and is_available():
+                return "mps"
+        return "cpu"
+
+    def _resolve_dtype(self) -> Any:
+        if torch_module is None:
+            return None
+        if self.device in {"cuda", "mps"} and self.config.use_fp16:
+            return torch_module.float16
+        return torch_module.float32
+
+    async def encode_documents(
+        self, texts: List[str], batch_size: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        if not self._is_initialized:
+            await self.initialize()
+
+        if not texts:
+            return []
+
+        batch_size = batch_size or self.config.batch_size
+
+        loop = asyncio.get_event_loop()
+        results: List[Dict[str, Any]] = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i : i + batch_size]
+            batch_embeddings = await loop.run_in_executor(
+                self._executor,
+                self._encode_batch_sync,
+                chunk,
+                self.config.passage_instruction,
+            )
+            for text, embedding in zip(chunk, batch_embeddings):
+                results.append(
+                    {
+                        "text": text,
+                        "dense_embedding": embedding,
+                        "sparse_embedding": {},
+                        "embedding_dim": len(embedding),
+                    }
+                )
+
+        logger.info("Encoded %s documents with Qwen3", len(texts))
+        return results
+
+    async def get_dense_embedding(self, text: str) -> List[float]:
+        if not self._is_initialized:
+            await self.initialize()
+        loop = asyncio.get_event_loop()
+        embeddings = await loop.run_in_executor(
+            self._executor,
+            self._encode_batch_sync,
+            [text],
+            self.config.passage_instruction,
+        )
+        return embeddings[0]
+
+    async def get_sparse_embedding(self, text: str) -> Dict[int | str, float]:
+        # Qwen3 does not produce sparse embeddings
+        return {}
+
+    async def encode_query(
+        self, query: str, instruction: Optional[str] = None
+    ) -> Dict[str, Any]:
+        if not self._is_initialized:
+            await self.initialize()
+
+        loop = asyncio.get_event_loop()
+        formatted_query = self._format_query(query, instruction)
+        embeddings = await loop.run_in_executor(
+            self._executor,
+            self._encode_batch_sync,
+            [formatted_query],
+            None,
+        )
+        dense_embedding = embeddings[0]
+        return {
+            "query": query,
+            "dense_embedding": dense_embedding,
+            "sparse_embedding": {},
+            "embedding_dim": len(dense_embedding),
+        }
+
+    def _format_query(self, query: str, instruction: Optional[str]) -> str:
+        template = instruction or self.config.query_instruction
+        if not template:
+            return query
+        if "{query}" in template:
+            return template.format(query=query)
+        return f"{template.strip()} {query}".strip()
+
+    def _encode_batch_sync(
+        self, texts: List[str], instruction: Optional[str]
+    ) -> List[List[float]]:
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Qwen3 embedding model not initialized")
+
+        prepared_texts = [self._apply_instruction(text, instruction) for text in texts]
+        batch_dict = self.tokenizer(
+            prepared_texts,
+            padding=True,
+            truncation=True,
+            max_length=self.config.max_length,
+            return_tensors="pt",
+        )
+
+        model_device = getattr(self.model, "device", None)
+        if model_device is None:
+            raise RuntimeError("Model device information unavailable")
+        device = model_device
+        batch_dict = {k: v.to(device) for k, v in batch_dict.items()}
+
+        if torch_module is None:
+            raise RuntimeError("PyTorch is required for Qwen3 embeddings")
+
+        with torch_module.no_grad():
+            outputs = self.model(**batch_dict)
+            hidden_states = outputs.last_hidden_state
+            attention_mask = batch_dict.get("attention_mask")
+            pooled = self._last_token_pool(hidden_states, attention_mask)
+            if self.config.normalize_embeddings and torch_nn_functional is not None:
+                pooled = torch_nn_functional.normalize(pooled, p=2, dim=1)
+
+        embeddings = pooled.detach().cpu().numpy()
+        return [row.astype(float).tolist() for row in embeddings]
+
+    def _apply_instruction(self, text: str, instruction: Optional[str]) -> str:
+        if instruction:
+            if "{query}" in instruction:
+                return instruction.format(query=text)
+            return f"{instruction.strip()} {text}".strip()
+        return text
+
+    def _last_token_pool(self, hidden_states: Any, attention_mask: Any) -> Any:
+        if torch_module is None:
+            raise RuntimeError("PyTorch is required for Qwen3 embeddings")
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if bool(left_padding):
+            return hidden_states[:, -1]
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = hidden_states.shape[0]
+        return hidden_states[
+            torch_module.arange(batch_size, device=hidden_states.device),
+            sequence_lengths,
+        ]
+
+    async def cleanup(self) -> None:
+        try:
+            if self._executor:
+                self._executor.shutdown(wait=False)
+        except Exception as exc:
+            logger.debug("Qwen3 executor shutdown warning: %s", exc)
+        finally:
+            self._executor = None  # type: ignore
+
+        self.model = None
+        self.tokenizer = None
+        self._is_initialized = False
+        logger.info("Qwen3 embedding service cleaned up")
+
+
+class HybridEmbeddingService(EmbeddingBackend):
+    """Hybrid embedding service using Qwen3 for dense and BGE-M3 for sparse vectors."""
+
+    def __init__(self, config: EmbeddingConfig):
+        super().__init__(config)
+        # Dense embeddings: Qwen3
+        self.dense_service = Qwen3EmbeddingService(config)
+
+        # Sparse embeddings: BGE-M3 using config.sparse settings
+        # Based on BGE-M3 official documentation optimal parameters
+        sparse_config = EmbeddingConfig(
+            backend=config.sparse.backend,
+            model=config.sparse.model,
+            model_name=config.sparse.backend,
+            dimension=config.sparse.dimension,
+            max_length=config.sparse.max_length,  # Use config max_length
+            normalize_embeddings=True,  # BGE-M3 requires normalization
+            batch_size=config.sparse.batch_size,  # Use corpus batch size
+            use_fp16=config.sparse.use_fp16,
+        )
+        # Store query batch size for later use
+        self._query_batch_size = getattr(
+            config.sparse, "query_batch_size", config.sparse.batch_size
+        )
+        self.sparse_service = BGEEmbeddingService(sparse_config)
+        self._is_initialized = False
+
+    @property
+    def supports_sparse(self) -> bool:
+        return True
+
+    async def initialize(self) -> None:
+        """Initialize both dense and sparse embedding services."""
+        if self._is_initialized:
+            return
+
+        try:
+            logger.info("Initializing hybrid embedding service (Qwen3 + BGE-M3)")
+            await self.dense_service.initialize()
+            await self.sparse_service.initialize()
+            self._is_initialized = True
+            logger.info("Hybrid embedding service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize hybrid embedding service: {e}")
+            raise
+
+    async def encode_documents(
+        self, texts: List[str], batch_size: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Encode documents using both dense (Qwen3) and sparse (BGE-M3) embeddings.
+        """
+        if not self._is_initialized:
+            await self.initialize()
+
+        if not texts:
+            return []
+
+        batch_size = batch_size or self.config.batch_size
+        logger.info(f"Encoding {len(texts)} documents with hybrid embeddings")
+
+        # Get dense embeddings from Qwen3
+        dense_results = await self.dense_service.encode_documents(texts, batch_size)
+
+        # Get sparse embeddings from BGE-M3
+        sparse_results = await self.sparse_service.encode_documents(texts, batch_size)
+
+        # Combine results
+        combined_results = []
+        for i, text in enumerate(texts):
+            if i < len(dense_results) and i < len(sparse_results):
+                combined_results.append(
+                    {
+                        "text": text,
+                        "dense_embedding": dense_results[i]["dense_embedding"],
+                        "sparse_embedding": sparse_results[i]["sparse_embedding"],
+                        "embedding_dim": len(dense_results[i]["dense_embedding"]),
+                    }
+                )
+            else:
+                logger.warning(f"Missing embedding results for document {i}")
+
+        logger.info(
+            f"Generated hybrid embeddings for {len(combined_results)} documents"
+        )
+        return combined_results
+
+    async def get_dense_embedding(self, text: str) -> List[float]:
+        """Get dense embedding from Qwen3."""
+        if not self._is_initialized:
+            await self.initialize()
+        return await self.dense_service.get_dense_embedding(text)
+
+    async def get_sparse_embedding(self, text: str) -> Dict[int | str, float]:
+        """Get sparse embedding from BGE-M3."""
+        if not self._is_initialized:
+            await self.initialize()
+        return await self.sparse_service.get_sparse_embedding(text)
+
+    async def encode_query(
+        self, query: str, instruction: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Encode query using both dense (Qwen3) and sparse (BGE-M3) embeddings.
+        Uses optimized batch size for query processing.
+        """
+        if not self._is_initialized:
+            await self.initialize()
+
+        # Get dense embedding from Qwen3
+        dense_result = await self.dense_service.encode_query(query, instruction)
+
+        # Get sparse embedding from BGE-M3 with query-optimized batch processing
+        # Temporarily override batch size for query processing
+        original_batch_size = self.sparse_service.config.batch_size
+        self.sparse_service.config.batch_size = self._query_batch_size
+        try:
+            sparse_result = await self.sparse_service.encode_query(query, instruction)
+        finally:
+            # Restore original batch size
+            self.sparse_service.config.batch_size = original_batch_size
+
+        # Combine results
+        return {
+            "query": query,
+            "dense_embedding": dense_result["dense_embedding"],
+            "sparse_embedding": sparse_result["sparse_embedding"],
+            "embedding_dim": dense_result["embedding_dim"],
+        }
+
+    async def cleanup(self) -> None:
+        """Clean up both embedding services."""
+        try:
+            await self.dense_service.cleanup()
+            await self.sparse_service.cleanup()
+            self._is_initialized = False
+            logger.info("Hybrid embedding service cleaned up")
+        except Exception as e:
+            logger.warning(f"Error during hybrid embedding cleanup: {e}")
+
+
 class EmbeddingManager:
     """Manager for embedding operations with caching and batch processing."""
 
-    def __init__(self, embedding_service: BGEEmbeddingService):
+    def __init__(self, embedding_service: EmbeddingBackend):
         self.embedding_service = embedding_service
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_size_limit = 10000  # Maximum cached embeddings
@@ -772,3 +1209,29 @@ class EmbeddingManager:
             "cache_limit": self._cache_size_limit,
             "cache_usage": len(self._cache) / self._cache_size_limit,
         }
+
+
+def create_embedding_backend(config: EmbeddingConfig) -> EmbeddingBackend:
+    """Factory to create embedding backend based on configuration."""
+
+    backend_id = (getattr(config, "backend", "") or "").lower()
+    model_name = (config.model_name or "").lower()
+    model_path = (config.model or "").lower()
+
+    candidates = [backend_id, model_name, model_path]
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        # Pure Qwen3 only (dense only, for backwards compatibility)
+        if candidate == "qwen3_dense_only":
+            return Qwen3EmbeddingService(config)
+        # Use hybrid for Qwen3-related backends - this gives both dense + sparse
+        if candidate.startswith("qwen3") or candidate == "hybrid":
+            return HybridEmbeddingService(config)
+        # Pure BGE-M3 only (dense + sparse from single model)
+        if candidate in {"bge_m3", "bge-m3", "bge"}:
+            return BGEEmbeddingService(config)
+
+    # Default to hybrid for new installs
+    return HybridEmbeddingService(config)
