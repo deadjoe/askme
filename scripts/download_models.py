@@ -53,9 +53,10 @@ def download_model(model_name: str, use_mirror: str = "official") -> str | None:
 def main() -> None:
     """Download all required models for dual-model architecture."""
     models_to_download = [
-        "Qwen/Qwen3-Embedding-4B",
+        "Qwen/Qwen3-Embedding-0.6B",
         "BAAI/bge-m3",
-        "Qwen/Qwen3-Reranker-4B",
+        "Qwen/Qwen3-Reranker-0.6B",
+        "BAAI/bge-reranker-v2-m3",
     ]
 
     # Check available mirrors

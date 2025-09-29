@@ -35,7 +35,7 @@ def mock_settings() -> Any:
     settings = MagicMock(spec=Settings)
     settings.rerank.local_backend = "qwen_local"
     settings.rerank.local_enabled = True
-    settings.rerank.local_model = "Qwen/Qwen3-Reranker-8B"
+    settings.rerank.local_model = "Qwen/Qwen3-Reranker-0.6B"
     return settings
 
 

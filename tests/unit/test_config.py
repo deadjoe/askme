@@ -50,8 +50,8 @@ class TestEmbeddingConfig:
         """Test default embedding configuration."""
         config = EmbeddingConfig()
         assert config.backend == "qwen3-hybrid"
-        assert config.model == "Qwen/Qwen3-Embedding-4B"
-        assert config.dimension == 2560
+        assert config.model == "Qwen/Qwen3-Embedding-0.6B"
+        assert config.dimension == 1024
         assert config.batch_size == 16
         # Test sparse config defaults
         assert config.sparse.enabled is True
@@ -103,7 +103,7 @@ class TestRerankConfig:
         assert config.top_n == 8
         assert config.score_threshold == 0.0
         assert config.local_backend == "qwen_local"
-        assert config.local_model == "Qwen/Qwen3-Reranker-4B"
+        assert config.local_model == "Qwen/Qwen3-Reranker-0.6B"
 
     def test_custom_values(self: Any) -> None:
         """Test custom reranking configuration."""
@@ -137,6 +137,6 @@ class TestSettings:
         """Test accessing nested configuration values."""
         settings = Settings()
         assert settings.database.host == "localhost"
-        assert settings.embedding.model == "Qwen/Qwen3-Embedding-4B"
+        assert settings.embedding.model == "Qwen/Qwen3-Embedding-0.6B"
         assert settings.hybrid.alpha == 0.5
         assert settings.rerank.top_n == 8

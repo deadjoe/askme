@@ -68,10 +68,11 @@ DEFAULT_SKIP_HEAVY_INIT=false
 DEFAULT_LOG_LEVEL="INFO"
 DEFAULT_DRY_RUN=false
 DEFAULT_EMBEDDING_BACKEND="qwen3-hybrid"
-DEFAULT_EMBEDDING_MODEL="Qwen/Qwen3-Embedding-4B"
-DEFAULT_EMBEDDING_DIMENSION="2560"
+DEFAULT_EMBEDDING_MODEL="Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_EMBEDDING_DIMENSION="1024"
+DEFAULT_EMBEDDING_DEVICE="auto"
 DEFAULT_RERANK_BACKEND="qwen_local"
-DEFAULT_RERANK_MODEL="Qwen/Qwen3-Reranker-4B"
+DEFAULT_RERANK_MODEL="Qwen/Qwen3-Reranker-0.6B"
 
 # Parse command line arguments
 PORT="$DEFAULT_PORT"
@@ -91,6 +92,7 @@ DRY_RUN="$DEFAULT_DRY_RUN"
 EMBEDDING_BACKEND="${ASKME_EMBEDDING__BACKEND:-$DEFAULT_EMBEDDING_BACKEND}"
 EMBEDDING_MODEL="${ASKME_EMBEDDING__MODEL:-$DEFAULT_EMBEDDING_MODEL}"
 EMBEDDING_DIMENSION="${ASKME_EMBEDDING__DIMENSION:-$DEFAULT_EMBEDDING_DIMENSION}"
+EMBEDDING_DEVICE="${ASKME_EMBEDDING__DEVICE:-$DEFAULT_EMBEDDING_DEVICE}"
 RERANK_BACKEND="${ASKME_RERANK__LOCAL_BACKEND:-$DEFAULT_RERANK_BACKEND}"
 RERANK_MODEL="${ASKME_RERANK__LOCAL_MODEL:-$DEFAULT_RERANK_MODEL}"
 
@@ -242,6 +244,7 @@ ALL_PARAM_KEYS=(
     "ASKME_EMBEDDING__MODEL"
     "ASKME_EMBEDDING__MODEL_NAME"
     "ASKME_EMBEDDING__DIMENSION"
+    "ASKME_EMBEDDING__DEVICE"
     "ASKME_EMBEDDING__MAX_LENGTH"
     "ASKME_EMBEDDING__NORMALIZE_EMBEDDINGS"
     "ASKME_EMBEDDING__BATCH_SIZE"
@@ -357,6 +360,7 @@ show_config_summary() {
     local embedding_backend="${ASKME_EMBEDDING__BACKEND:-$EMBEDDING_BACKEND}"
     local embedding_model="${ASKME_EMBEDDING__MODEL:-$EMBEDDING_MODEL}"
     local embedding_dimension="${ASKME_EMBEDDING__DIMENSION:-$EMBEDDING_DIMENSION}"
+    local embedding_device="${ASKME_EMBEDDING__DEVICE:-$EMBEDDING_DEVICE}"
 
     echo
     echo "======================================================================"
@@ -377,7 +381,7 @@ show_config_summary() {
     echo
     echo "🧠 Dual-Model Embedding Architecture:"
     echo "   • Architecture: qwen3-hybrid (Qwen3 dense + BGE-M3 sparse)"
-    echo "   • Dense Model: $embedding_model (${embedding_dimension}D)"
+    echo "   • Dense Model: $embedding_model (${embedding_dimension}D on $embedding_device)"
     echo "   • Sparse Model: BAAI/bge-m3 (lexical weights)"
     echo "   • Dense Batch: 16, Sparse Corpus: 4, Query: 12"
     echo

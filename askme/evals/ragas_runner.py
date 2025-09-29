@@ -238,7 +238,7 @@ def run_ragas(
     try:
         from ragas.embeddings import HuggingFaceEmbeddings
 
-        model_name = os.getenv("ASKME_RAGAS_EMBED_MODEL", "Qwen/Qwen3-Embedding-8B")
+        model_name = os.getenv("ASKME_RAGAS_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
         emb = HuggingFaceEmbeddings(
             model=model_name,
             use_api=False,
