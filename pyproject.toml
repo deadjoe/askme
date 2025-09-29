@@ -1,7 +1,7 @@
 [project]
 name = "askme"
 version = "0.1.0"
-description = "Hybrid RAG system with BGE-M3, reranking, and evaluation"
+description = "Hybrid RAG system with Qwen3/BGE embeddings, reranking, and evaluation"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -20,8 +20,6 @@ dependencies = [
     "transformers>=4.35.0",
     "torch>=2.0.0",
     "FlagEmbedding>=1.2.10",
-    # Cloud reranking fallback
-    "cohere>=4.40.0",
     # Document processing
     "pypdf>=3.17.0",
     "python-multipart>=0.0.6",
