@@ -38,9 +38,9 @@ hybrid:
 embedding:
   # Primary backend: hybrid uses Qwen3 for dense + BGE-M3 for sparse
   backend: "qwen3-hybrid"
-  model: "Qwen/Qwen3-Embedding-8B"
+  model: "Qwen/Qwen3-Embedding-4B"
   model_name: "qwen3-hybrid"
-  dimension: 4096
+  dimension: 2560  # Qwen3-4B max dimension (reduced from 4096 for 8B)
   max_length: 8192
   normalize_embeddings: true
   batch_size: 16
@@ -64,11 +64,11 @@ embedding:
 
 # Reranking Configuration
 rerank:
-  # Local reranker (primary) - Qwen3-Reranker-8B optimized settings
+  # Local reranker (primary) - Qwen3-Reranker-4B optimized settings
   local_backend: "qwen_local"
-  local_model: "Qwen/Qwen3-Reranker-8B"
+  local_model: "Qwen/Qwen3-Reranker-4B"
   local_enabled: true
-  local_batch_size: 8           # Qwen3-Reranker optimal batch size
+  local_batch_size: 12          # Increased batch size for 4B model (more memory available)
   local_max_length: 1024        # Reduced for better performance (Qwen3 supports up to 32k)
   local_instruction: "Given a web search query, retrieve relevant passages that answer the query"
   local_use_fp16: true
