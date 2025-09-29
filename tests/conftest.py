@@ -19,11 +19,11 @@ def mock_settings() -> Any:
     settings.vector_backend = "weaviate"
     settings.database.host = "localhost"
     settings.database.port = 19530
-    settings.embedding.model = "Qwen/Qwen3-Embedding-8B"
-    settings.embedding.dimension = 4096
+    settings.embedding.model = "Qwen/Qwen3-Embedding-0.6B"
+    settings.embedding.dimension = 1024
     settings.rerank.local_enabled = True
     settings.rerank.local_backend = "qwen_local"
-    settings.rerank.local_model = "Qwen/Qwen3-Reranker-8B"
+    settings.rerank.local_model = "Qwen/Qwen3-Reranker-0.6B"
     return settings
 
 

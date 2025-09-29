@@ -43,6 +43,29 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
+def _torch_cuda_available() -> bool:
+    if torch_module is None:
+        return False
+    cuda_mod = getattr(torch_module, "cuda", None)
+    if cuda_mod is None:
+        return False
+    is_available = getattr(cuda_mod, "is_available", None)
+    return callable(is_available) and is_available()
+
+
+def _torch_mps_available() -> bool:
+    if torch_module is None:
+        return False
+    backends = getattr(torch_module, "backends", None)
+    if backends is None:
+        return False
+    mps_mod = getattr(backends, "mps", None)
+    if mps_mod is None:
+        return False
+    is_available = getattr(mps_mod, "is_available", None)
+    return callable(is_available) and is_available()
+
+
 class EmbeddingBackend(ABC):
     """Abstract base class for embedding backends."""
 
@@ -87,29 +110,13 @@ class BGEEmbeddingService(EmbeddingBackend):
         super().__init__(config)
         self.model: Any | None = None
         # Allow operation without torch installed (skip GPU detection)
-        self.device = "cpu"  # fallback default
-        if torch_module is not None:
-            # Check for NVIDIA CUDA (preferred for BGE-M3 stability)
-            if hasattr(torch_module, "cuda"):
-                cuda_mod = getattr(torch_module, "cuda")
-                is_available = getattr(cuda_mod, "is_available", None)
-                if callable(is_available) and is_available():
-                    self.device = "cuda"
-            # Check for Apple Silicon MPS (known memory leak issues with BGE-M3)
-            if (
-                self.device == "cpu"
-                and hasattr(torch_module, "backends")
-                and hasattr(torch_module.backends, "mps")
-            ):
-                mps_mod = getattr(torch_module.backends, "mps")
-                is_available = getattr(mps_mod, "is_available", None)
-                if callable(is_available) and is_available():
-                    # Use MPS but with memory management warnings
-                    self.device = "mps"
-                    logger.warning(
-                        "Using MPS backend for BGE-M3 - known memory leak issues. "
-                        "Monitor memory usage, consider CPU for large datasets."
-                    )
+        self._requested_device = getattr(config, "device", "auto").lower()
+        self.device = self._select_device()
+        if self.device == "mps":
+            logger.warning(
+                "Using MPS backend for BGE-M3 - known memory leak issues. "
+                "Monitor memory usage, consider CPU for large datasets."
+            )
         self._is_initialized = False
         # Thread pool for CPU-intensive embedding operations
         self._executor = ThreadPoolExecutor(
@@ -120,6 +127,38 @@ class BGEEmbeddingService(EmbeddingBackend):
     @property
     def supports_sparse(self) -> bool:
         return True
+
+    def _select_device(self) -> str:
+        requested = (self._requested_device or "auto").lower()
+
+        if requested == "cpu" or torch_module is None:
+            return "cpu"
+        if requested == "cuda":
+            if _torch_cuda_available():
+                return "cuda"
+            logger.warning(
+                "Requested CUDA device for BGE embeddings, but CUDA is unavailable. "
+                "Falling back to auto detection."
+            )
+        elif requested == "mps":
+            if _torch_mps_available():
+                return "mps"
+            logger.warning(
+                "Requested MPS device for BGE embeddings, but MPS is unavailable. "
+                "Falling back to auto detection."
+            )
+        elif requested != "auto" and requested:
+            logger.warning(
+                "Unknown embedding device '%s' requested for BGE embeddings; "
+                "falling back to auto detection.",
+                requested,
+            )
+
+        if _torch_cuda_available():
+            return "cuda"
+        if _torch_mps_available():
+            return "mps"
+        return "cpu"
 
     async def initialize(self) -> None:
         """Initialize the BGE-M3 model."""
@@ -773,6 +812,7 @@ class Qwen3EmbeddingService(EmbeddingBackend):
         self.model: Any | None = None
         self.tokenizer: Any | None = None
         self.device = "cpu"
+        self._requested_device = getattr(config, "device", "auto").lower()
         self._is_initialized = False
         self._executor = ThreadPoolExecutor(
             max_workers=1,
@@ -838,18 +878,35 @@ class Qwen3EmbeddingService(EmbeddingBackend):
         logger.info("Qwen3 embedding model loaded successfully")
 
     def _select_device(self) -> str:
-        if torch_module is None:
-            return "cpu"
-        if hasattr(torch_module, "cuda"):
-            cuda_mod = getattr(torch_module, "cuda")
-            is_available = getattr(cuda_mod, "is_available", None)
-            if callable(is_available) and is_available():
+        requested = (self._requested_device or "auto").lower()
+        if requested == "cuda":
+            if _torch_cuda_available():
                 return "cuda"
-        if hasattr(torch_module, "backends") and hasattr(torch_module.backends, "mps"):
-            mps_mod = getattr(torch_module.backends, "mps")
-            is_available = getattr(mps_mod, "is_available", None)
-            if callable(is_available) and is_available():
+            logger.warning(
+                "Requested CUDA device for Qwen3 embeddings, but CUDA is unavailable. "
+                "Falling back to auto detection."
+            )
+        elif requested == "mps":
+            if _torch_mps_available():
                 return "mps"
+            logger.warning(
+                "Requested MPS device for Qwen3 embeddings, but MPS is unavailable. "
+                "Falling back to auto detection."
+            )
+        elif requested == "cpu":
+            return "cpu"
+        elif requested != "auto" and requested:
+            logger.warning(
+                "Unknown embedding device '%s' requested; "
+                "falling back to auto detection.",
+                requested,
+            )
+
+        # Auto-detect preference order: CUDA -> MPS -> CPU
+        if _torch_cuda_available():
+            return "cuda"
+        if _torch_mps_available():
+            return "mps"
         return "cpu"
 
     def _resolve_dtype(self) -> Any:
@@ -970,11 +1027,9 @@ class Qwen3EmbeddingService(EmbeddingBackend):
         model_device = getattr(self.model, "device", None)
         if model_device is None:
             raise RuntimeError("Model device information unavailable")
+
         device = model_device
         batch_dict = {k: v.to(device) for k, v in batch_dict.items()}
-
-        if torch_module is None:
-            raise RuntimeError("PyTorch is required for Qwen3 embeddings")
 
         with torch_module.no_grad():
             outputs = self.model(**batch_dict)
@@ -1112,6 +1167,7 @@ class HybridEmbeddingService(EmbeddingBackend):
             normalize_embeddings=True,  # BGE-M3 requires normalization
             batch_size=config.sparse.batch_size,  # Use corpus batch size
             use_fp16=config.sparse.use_fp16,
+            device=config.sparse.device,
         )
         # Store query batch size for later use
         self._query_batch_size = getattr(

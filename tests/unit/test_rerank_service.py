@@ -21,9 +21,9 @@ class TestRerankConfig:
     def test_default_values(self: Any) -> None:
         config = RerankConfig()
         assert config.local_backend == "qwen_local"
-        assert config.local_model == "Qwen/Qwen3-Reranker-8B"
+        assert config.local_model == "Qwen/Qwen3-Reranker-0.6B"
         assert config.local_enabled is True
-        assert config.local_batch_size == 8
+        assert config.local_batch_size == 16
         assert config.local_max_length == 1024
         assert config.local_instruction.startswith("Given a web search query")
         assert config.top_n == 8
@@ -154,7 +154,7 @@ class TestQwen3Reranker:
     def _qwen_config(self: Any, **overrides: Any) -> RerankConfig:
         base = {
             "local_backend": "qwen_local",
-            "local_model": "Qwen/Qwen3-Reranker-8B",
+            "local_model": "Qwen/Qwen3-Reranker-0.6B",
             "local_batch_size": 2,
         }
         base.update(overrides)
@@ -183,7 +183,7 @@ class TestQwen3Reranker:
         reranker = Qwen3Reranker(config)
         info = reranker.get_model_info()
         assert info["type"] == "qwen_local"
-        assert info["model_name"] == "Qwen/Qwen3-Reranker-8B"
+        assert info["model_name"] == "Qwen/Qwen3-Reranker-0.6B"
         assert info["initialized"] is False
 
 

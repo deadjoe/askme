@@ -93,10 +93,10 @@ The system implements a complete RAG pipeline with:
     try:
         embedding_config = EmbeddingConfig(
             backend="qwen3-hybrid",
-            model="Qwen/Qwen3-Embedding-8B",
+            model="Qwen/Qwen3-Embedding-0.6B",
             model_name="qwen3-hybrid",
             batch_size=8,
-            dimension=4096,
+            dimension=1024,
         )
         embedding_service = create_embedding_backend(embedding_config)
 
@@ -115,7 +115,7 @@ The system implements a complete RAG pipeline with:
     try:
         rerank_config = RerankConfig(
             local_backend="qwen_local",
-            local_model="Qwen/Qwen3-Reranker-8B",
+            local_model="Qwen/Qwen3-Reranker-0.6B",
             local_enabled=True,
             top_n=5,
         )
