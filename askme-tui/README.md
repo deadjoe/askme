@@ -74,7 +74,7 @@ cargo run --release
 - **RRF**: Use Reciprocal Rank Fusion
 - **HyDE**: Enable Hypothetical Document Embeddings
 - **RAG-Fusion**: Enable multi-query generation
-- **Reranker**: Choose between BGE local or Cohere
+- **Reranker**: Choose between Qwen local or BGE local
 - **Max Passages**: Limit passages for generation (1-20)
 
 #### Keyboard Controls
@@ -161,7 +161,7 @@ use_rrf = true
 rrf_k = 60
 use_hyde = false
 use_rag_fusion = false
-reranker = "bge_local"
+reranker = "qwen_local"
 max_passages = 8
 include_debug = false
 ```

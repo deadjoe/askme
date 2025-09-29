@@ -111,7 +111,7 @@ fn render_help_tab(frame: &mut Frame, area: Rect) {
         "",
         "FEATURES:",
         "  • Hybrid search with BM25 + dense vectors",
-        "  • Multiple reranking models (BGE local, Cohere)",
+        "  • Multiple reranking models (Qwen local, BGE local)",
         "  • Query enhancement (HyDE, RAG-Fusion)",
         "  • Real-time ingestion progress tracking",
         "  • Configurable output formats (Text, JSON, Markdown)",
