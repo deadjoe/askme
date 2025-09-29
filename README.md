@@ -13,7 +13,7 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelli
 ## Features
 
 - **Hybrid Search**: Combines BM25/sparse and dense vector retrieval with configurable fusion methods (Alpha, RRF, relative scoring)
-- **Intelligent Reranking**: Local BGE-reranker-v2.5 with Cohere Rerank 3.5 fallback for optimal relevance scoring
+- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback and Cohere Rerank 3.5 integration
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
 - **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
 - **Comprehensive Evaluation**: TruLens RAG Triad, Ragas v0.2+, offline local LLM judges, and embedding similarity metrics with A/B testing capabilities
@@ -22,17 +22,18 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelli
 ## Architecture
 
 ```
-Documents → Ingest → Vector DB (Hybrid Index) → Query → Retrieve (topK=50) →
-Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
+Documents → Dual Embedding (Qwen3 Dense + BGE-M3 Sparse) → Vector DB (Hybrid Index) →
+Query → Dual Encoding → Hybrid Retrieval (topK=50) → Qwen3 Rerank (topN=8) →
+LLM Generate → Answer with Citations → Evaluate
 ```
 
 ### Core Technologies
 
-- **Embeddings**: BGE-M3 multilingual model (dense + sparse support)
+- **Embeddings**: Hybrid dual-model architecture using Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights only)
 - **Vector Database**: Weaviate (primary), Milvus 2.5+/Qdrant alternatives with hybrid search support
-- **Reranking**: BAAI/bge-reranker-v2-m3 cross-encoder (local), Cohere Rerank 3.5 (cloud fallback)
+- **Reranking**: Qwen/Qwen3-Reranker-8B (local default), optional BGE reranker and Cohere Rerank 3.5 fallback
 - **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
-- **Evaluation**: TruLens + Ragas with local embedding metrics, configurable LLM judges, and automated quality thresholds
+- **Evaluation**: TruLens + Ragas with configurable embedding backends, local LLM judges, and automated quality thresholds
 - **Generation**: OpenAI-compatible, local Ollama, or template-based approaches
 
 ## Quick Start
@@ -92,7 +93,7 @@ The `./scripts/answer.sh` script supports comprehensive parameter tuning for opt
 | `--alpha=X` | 0.5 | 0.0-1.0 | Hybrid search weight (0=sparse, 1=dense) | 0.0=keyword matching, 1.0=semantic similarity |
 | `--rrf` / `--no-rrf` | `--rrf` | boolean | Use RRF vs alpha fusion | RRF=stable ranking, alpha=direct weighting |
 | `--rrf-k=N` | 60 | 1-200 | RRF fusion smoothing parameter | Lower=aggressive reranking, higher=conservative |
-| `--reranker=TYPE` | `bge_local` | `bge_local`, `cohere` | Reranking model selection | Local=private, Cohere=higher quality |
+| `--reranker=TYPE` | `qwen_local` | `qwen_local`, `bge_local` | Reranking model selection | Qwen=default dense reranker, BGE=legacy sparse-aware |
 | `--max-passages=N` | 8 | 1-20 | Final passages for LLM generation | More=richer context, risk of attention dilution |
 | `--hyde` | disabled | boolean | Enable HyDE query expansion | Better for abstract/conceptual queries |
 | `--rag-fusion` | disabled | boolean | Multi-query generation and fusion | Better coverage for complex questions |
@@ -108,16 +109,13 @@ The `./scripts/answer.sh` script supports comprehensive parameter tuning for opt
 ./scripts/answer.sh "Explain machine learning principles" --alpha=0.8 --max-passages=12
 
 # Sparse keyword search for specific terms
-./scripts/answer.sh "BGE-M3 model architecture" --alpha=0.2 --topk=80
+./scripts/answer.sh "Vector store indexing parameters" --alpha=0.2 --topk=80
 
 # Enhanced query with expansion techniques
 ./scripts/answer.sh "How does attention mechanism work?" --hyde --rag-fusion --format=markdown
 
 # Debug mode with detailed retrieval information
 ./scripts/answer.sh "Vector database comparison" --debug --verbose --format=json
-
-# High-quality reranking with cloud fallback
-./scripts/answer.sh "Production RAG best practices" --reranker=cohere --max-passages=10
 ```
 
 ## Configuration
@@ -135,17 +133,34 @@ hybrid:
   rrf_k: 60            # RRF fusion parameter
   topk: 50             # Initial retrieval candidates
 
-# Embedding model
+  # Search parameters (optimized for dual-model architecture)
+  dense_weight: 1.0    # Qwen3 dense embeddings weight
+  sparse_weight: 0.3   # BGE-M3 sparse weight (official research optimal)
+
+# Dual-model embedding configuration
 embedding:
-  model: BAAI/bge-m3
-  dimension: 1024
+  backend: qwen3-hybrid           # Hybrid: Qwen3 dense + BGE-M3 sparse
+  model: Qwen/Qwen3-Embedding-8B  # Primary dense embedding model
+  dimension: 4096                 # Qwen3 embedding dimension
   normalize_embeddings: true
+  batch_size: 16                  # Optimized for Qwen3 dense processing
+  pooling_method: last_token      # Qwen3 optimal pooling
+
+  # BGE-M3 sparse configuration (lexical weights only)
+  sparse:
+    enabled: true
+    backend: bge_m3
+    model: BAAI/bge-m3
+    batch_size: 4                 # BGE-M3 corpus optimal
+    query_batch_size: 12          # BGE-M3 query optimal
+    max_length: 8192              # BGE-M3 official optimal
+    use_fp16: true
 
 # Reranking
 rerank:
-  local_model: BAAI/bge-reranker-v2-m3
+  local_backend: qwen_local
+  local_model: Qwen/Qwen3-Reranker-8B
   local_enabled: true
-  cohere_enabled: false  # Enable via ASKME_ENABLE_COHERE=1
   top_n: 8
 
 # Generation
@@ -156,6 +171,10 @@ generation:
   openai_model: gpt-4o-mini
 ```
 
+- Use `backend: qwen3-hybrid` for the dual-model architecture (Qwen3 dense + BGE-M3 sparse)
+- Use `backend: qwen3` for dense-only Qwen3 embeddings (no sparse vectors)
+- Use `backend: bge_m3` for legacy BGE-M3-only mode (both dense and sparse from BGE-M3)
+
 ### Startup Scripts
 
 For convenient development and deployment, use the provided startup and shutdown scripts:
@@ -163,9 +182,6 @@ For convenient development and deployment, use the provided startup and shutdown
 ```bash
 # Start API server with custom configuration
 ./scripts/start-api.sh --port 8080 --ollama-model qwen3:30b-a3b --vector-backend milvus
-
-# Start with Cohere reranking enabled
-./scripts/start-api.sh --enable-cohere  # Requires COHERE_API_KEY env var
 
 # Quick development start (skip heavy initialization)
 ./scripts/start-api.sh --skip-heavy-init --reload
@@ -189,7 +205,6 @@ All configuration can be overridden using environment variables with the `ASKME_
 |----------|---------|-------------|
 | `ASKME_VECTOR_BACKEND` | `weaviate` | Vector database backend (weaviate/milvus/qdrant) |
 | `ASKME_ENABLE_OLLAMA` | `false` | Enable local Ollama LLM generation |
-| `ASKME_ENABLE_COHERE` | `false` | Enable Cohere reranking service |
 | `ASKME_SKIP_HEAVY_INIT` | `false` | Skip heavy service initialization |
 | `ASKME_LOG_LEVEL` | `INFO` | Log level (DEBUG/INFO/WARNING/ERROR) |
 
@@ -228,12 +243,23 @@ All configuration can be overridden using environment variables with the `ASKME_
 #### Embedding Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ASKME_EMBEDDING__MODEL` | `BAAI/bge-m3` | Embedding model name |
-| `ASKME_EMBEDDING__DIMENSION` | `1024` | Embedding dimension |
-| `ASKME_EMBEDDING__BATCH_SIZE` | `32` | Embedding batch size |
+| `ASKME_EMBEDDING__BACKEND` | `qwen3-hybrid` | Embedding backend (`qwen3-hybrid`, `qwen3`, `bge_m3`) |
+| `ASKME_EMBEDDING__MODEL` | `Qwen/Qwen3-Embedding-8B` | Dense embedding model (Qwen3) |
+| `ASKME_EMBEDDING__DIMENSION` | `4096` | Dense embedding dimension |
+| `ASKME_EMBEDDING__BATCH_SIZE` | `16` | Embedding batch size |
 | `ASKME_EMBEDDING__MAX_LENGTH` | `8192` | Maximum input length |
 | `ASKME_EMBEDDING__NORMALIZE_EMBEDDINGS` | `true` | Normalize embeddings |
 | `ASKME_EMBEDDING__USE_FP16` | `true` | Use FP16 precision |
+
+**Sparse Embedding Configuration (BGE-M3 for lexical weights):**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASKME_EMBEDDING__SPARSE__ENABLED` | `true` | Enable sparse vectors |
+| `ASKME_EMBEDDING__SPARSE__BACKEND` | `bge_m3` | Sparse embedding backend |
+| `ASKME_EMBEDDING__SPARSE__MODEL` | `BAAI/bge-m3` | Sparse embedding model (BGE-M3) |
+| `ASKME_EMBEDDING__SPARSE__BATCH_SIZE` | `4` | BGE-M3 corpus processing batch size |
+| `ASKME_EMBEDDING__SPARSE__QUERY_BATCH_SIZE` | `12` | BGE-M3 query processing batch size |
+| `ASKME_EMBEDDING__SPARSE__USE_FP16` | `true` | Use FP16 for sparse model |
 
 #### Hybrid Search Configuration
 | Variable | Default | Description |
@@ -243,16 +269,15 @@ All configuration can be overridden using environment variables with the `ASKME_
 | `ASKME_HYBRID__RRF_K` | `60` | RRF fusion parameter |
 | `ASKME_HYBRID__TOPK` | `50` | Initial retrieval candidates |
 | `ASKME_HYBRID__DENSE_WEIGHT` | `1.0` | Dense search weight |
-| `ASKME_HYBRID__SPARSE_WEIGHT` | `1.0` | Sparse search weight |
+| `ASKME_HYBRID__SPARSE_WEIGHT` | `0.3` | BGE-M3 sparse search weight (official optimal) |
 
 #### Reranking Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ASKME_RERANK__LOCAL_MODEL` | `BAAI/bge-reranker-v2-m3` | Local reranking model |
+| `ASKME_RERANK__LOCAL_BACKEND` | `qwen_local` | Local reranking backend |
+| `ASKME_RERANK__LOCAL_MODEL` | `Qwen/Qwen3-Reranker-8B` | Local reranking model |
 | `ASKME_RERANK__LOCAL_ENABLED` | `true` | Enable local reranking |
-| `ASKME_RERANK__LOCAL_BATCH_SIZE` | `16` | Local reranking batch size |
-| `ASKME_RERANK__COHERE_ENABLED` | `false` | Enable Cohere reranking |
-| `ASKME_RERANK__COHERE_MODEL` | `rerank-3.5-turbo` | Cohere model name |
+| `ASKME_RERANK__LOCAL_BATCH_SIZE` | `8` | Qwen3-Reranker-8B optimal batch size |
 | `ASKME_RERANK__TOP_N` | `8` | Final reranked passages |
 
 #### API Server Configuration
@@ -276,8 +301,10 @@ All configuration can be overridden using environment variables with the `ASKME_
 #### Performance & Monitoring
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE` | `32` | Embedding batch size |
-| `ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE` | `16` | Reranking batch size |
+| `ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE` | `16` | Dense embedding batch size (Qwen3 optimal) |
+| `ASKME_PERFORMANCE__BATCH__SPARSE_BATCH_SIZE` | `4` | Sparse embedding batch size (BGE-M3 corpus) |
+| `ASKME_PERFORMANCE__BATCH__QUERY_BATCH_SIZE` | `12` | Query batch size (BGE-M3 query optimal) |
+| `ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE` | `8` | Qwen3-Reranker-8B optimal batch size |
 | `ASKME_PERFORMANCE__TIMEOUTS__RETRIEVAL_TIMEOUT` | `15` | Retrieval timeout (seconds) |
 | `ASKME_PERFORMANCE__TIMEOUTS__RERANK_TIMEOUT` | `30` | Reranking timeout (seconds) |
 | `ASKME_PERFORMANCE__TIMEOUTS__GENERATION_TIMEOUT` | `60` | Generation timeout (seconds) |
