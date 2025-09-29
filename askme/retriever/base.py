@@ -52,6 +52,11 @@ class VectorRetriever(ABC):
         self.collection_name = config.get("collection_name", "askme_default")
 
     @property
+    def supports_sparse(self) -> bool:
+        """Whether the retriever expects sparse vectors for hybrid search."""
+        return True
+
+    @property
     def supports_native_upsert(self) -> bool:
         """Whether this retriever supports native upsert operations.
 
