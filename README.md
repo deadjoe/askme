@@ -8,11 +8,11 @@
 [![Coverage](https://img.shields.io/badge/coverage-~88%25-success)](./htmlcov)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Production-ready hybrid RAG (Retrieval-Augmented Generation) system with intelligent reranking, multi-backend vector database support, and comprehensive evaluation framework.
+Production-ready hybrid RAG (Retrieval-Augmented Generation) system featuring dual-model embedding architecture (Qwen3-8B + BGE-M3), intelligent Qwen3 reranking, multi-backend vector database support, and comprehensive evaluation framework.
 
 ## Features
 
-- **Hybrid Search**: Combines BM25/sparse and dense vector retrieval with configurable fusion methods (Alpha, RRF, relative scoring)
+- **Dual-Model Hybrid Search**: Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights) with configurable fusion (Alpha, RRF, relative scoring)
 - **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback and Cohere Rerank 3.5 integration
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
 - **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
@@ -54,8 +54,10 @@ cd askme
 # Install dependencies
 uv sync --dev
 
-# Start vector database (Weaviate)
+# Start vector database (Weaviate by default, or Milvus for hybrid search)
 docker compose -f docker/docker-compose.yaml --profile weaviate up -d weaviate
+# OR for Milvus with hybrid search support:
+# docker compose -f docker/docker-compose.yaml up -d milvus
 
 # Start API server using startup script
 ./scripts/start-api.sh --skip-heavy-init --reload
@@ -74,7 +76,7 @@ docker compose -f docker/docker-compose.yaml --profile weaviate up -d weaviate
 ./scripts/answer.sh "What is machine learning?"
 
 # Retrieve documents only (for debugging/tuning)
-./scripts/retrieve.sh "hybrid search techniques" --topk=100 --alpha=0.7
+./scripts/retrieve.sh "hybrid search techniques" --topk=50 --alpha=0.7
 
 # Quick end-to-end smoke test (requires curl + jq)
 ./query_test.sh "Who created BM25?"
@@ -89,11 +91,11 @@ The `./scripts/answer.sh` script supports comprehensive parameter tuning for opt
 
 | Parameter | Default | Range/Options | Description | Impact |
 |-----------|---------|---------------|-------------|---------|
-| `--topk=N` | 100 | 1-100 | Number of initial retrieval candidates | Higher = better recall, slower response |
+| `--topk=N` | 50 | 1-100 | Number of initial retrieval candidates | Higher = better recall, slower response |
 | `--alpha=X` | 0.5 | 0.0-1.0 | Hybrid search weight (0=sparse, 1=dense) | 0.0=keyword matching, 1.0=semantic similarity |
 | `--rrf` / `--no-rrf` | `--rrf` | boolean | Use RRF vs alpha fusion | RRF=stable ranking, alpha=direct weighting |
 | `--rrf-k=N` | 60 | 1-200 | RRF fusion smoothing parameter | Lower=aggressive reranking, higher=conservative |
-| `--reranker=TYPE` | `qwen_local` | `qwen_local`, `bge_local` | Reranking model selection | Qwen=default dense reranker, BGE=legacy sparse-aware |
+| `--reranker=TYPE` | `qwen_local` | `qwen_local`, `bge_local` | Reranking model selection | Qwen3=optimized reranker, BGE=legacy fallback |
 | `--max-passages=N` | 8 | 1-20 | Final passages for LLM generation | More=richer context, risk of attention dilution |
 | `--hyde` | disabled | boolean | Enable HyDE query expansion | Better for abstract/conceptual queries |
 | `--rag-fusion` | disabled | boolean | Multi-query generation and fusion | Better coverage for complex questions |
@@ -105,11 +107,11 @@ The `./scripts/answer.sh` script supports comprehensive parameter tuning for opt
 ### Query Examples
 
 ```bash
-# Dense semantic search for conceptual queries
-./scripts/answer.sh "Explain machine learning principles" --alpha=0.8 --max-passages=12
+# Dense semantic search for conceptual queries (favor Qwen3 embeddings)
+./scripts/answer.sh "Explain machine learning principles" --alpha=0.8 --topk=50 --max-passages=12
 
-# Sparse keyword search for specific terms
-./scripts/answer.sh "Vector store indexing parameters" --alpha=0.2 --topk=80
+# Sparse keyword search for specific terms (favor BGE-M3 lexical weights)
+./scripts/answer.sh "Vector store indexing parameters" --alpha=0.2 --topk=50
 
 # Enhanced query with expansion techniques
 ./scripts/answer.sh "How does attention mechanism work?" --hyde --rag-fusion --format=markdown
@@ -166,7 +168,7 @@ rerank:
 # Generation
 generation:
   provider: ollama       # simple | ollama | openai
-  ollama_model: gpt-oss:20b
+  ollama_model: gpt-oss:120b-cloud  # Updated for dual-model architecture
   ollama_endpoint: http://localhost:11434
   openai_model: gpt-4o-mini
 ```
@@ -181,7 +183,7 @@ For convenient development and deployment, use the provided startup and shutdown
 
 ```bash
 # Start API server with custom configuration
-./scripts/start-api.sh --port 8080 --ollama-model qwen3:30b-a3b --vector-backend milvus
+./scripts/start-api.sh --port 8080 --ollama-model gpt-oss:120b-cloud --vector-backend milvus
 
 # Quick development start (skip heavy initialization)
 ./scripts/start-api.sh --skip-heavy-init --reload
@@ -230,10 +232,10 @@ All configuration can be overridden using environment variables with the `ASKME_
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ASKME_GENERATION__PROVIDER` | `simple` | LLM provider (simple/ollama/openai) |
-| `ASKME_GENERATION__OLLAMA_MODEL` | `llama3.1:latest` | Ollama model name |
+| `ASKME_GENERATION__OLLAMA_MODEL` | `gpt-oss:120b-cloud` | Ollama model name |
 | `ASKME_GENERATION__OLLAMA_ENDPOINT` | `http://localhost:11434` | Ollama endpoint URL |
 | `ASKME_GENERATION__MODEL_NAME` | `gpt-4` | Default model name |
-| `ASKME_GENERATION__MAX_TOKENS` | `1500` | Maximum generation tokens |
+| `ASKME_GENERATION__MAX_TOKENS` | `2048` | Maximum generation tokens |
 | `ASKME_GENERATION__TEMPERATURE` | `0.1` | Generation temperature |
 | `ASKME_GENERATION__TOP_P` | `0.9` | Top-p sampling parameter |
 | `ASKME_GENERATION__OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
@@ -363,7 +365,7 @@ curl -X POST "http://localhost:8080/query/" \
     "topk": 50,
     "alpha": 0.5,
     "use_rrf": true,
-    "reranker": "bge_local",
+    "reranker": "qwen_local",
     "max_passages": 8,
     "include_debug": true
   }'
@@ -374,7 +376,7 @@ curl -X POST "http://localhost:8080/query/" \
 ### Docker Deployment
 
 ```bash
-# Full stack with Milvus (recommended)
+# Full stack with Milvus (recommended for hybrid search)
 docker compose -f docker/docker-compose.yaml up -d
 
 # Alternative vector databases
@@ -458,7 +460,7 @@ The project maintains high code quality standards:
 ./scripts/evaluate.sh --dataset="/path/to/qa_dataset.jsonl" --metrics="faithfulness,context_precision"
 
 # Parameter tuning evaluation
-./scripts/evaluate.sh --suite=baseline --alpha=0.3 --topk=75 --topn=10
+./scripts/evaluate.sh --suite=baseline --alpha=0.5 --topk=50 --topn=8
 ```
 
 ### Available Metrics
@@ -542,9 +544,9 @@ uv run bandit -r askme
    - Use `--param=value` format for script parameters:
      ```bash
      # Correct
-     ./scripts/retrieve.sh "query" --topk=25 --alpha=0.7
+     ./scripts/retrieve.sh "query" --topk=50 --alpha=0.7
      # Incorrect
-     ./scripts/retrieve.sh "query" --topk 25 --alpha 0.7
+     ./scripts/retrieve.sh "query" --topk 50 --alpha 0.7
      ```
 
 3. **Slow Retrieval Performance**
@@ -553,14 +555,16 @@ uv run bandit -r askme
    - Monitor embedding service latency
 
 4. **Poor Reranking Quality**
-   - Ensure local BGE-reranker model is properly loaded
-   - Check Cohere API key and fallback configuration
+   - Ensure local Qwen3-Reranker-8B model is properly loaded
+   - Verify batch size settings (optimal: 8 for Qwen3-Reranker)
+   - Check BGE fallback configuration if needed
    - Verify reranking score thresholds
 
 5. **Memory Issues**
-   - Adjust batch sizes in `configs/askme.yaml`
+   - Adjust batch sizes in `configs/askme.yaml` (Qwen3: 16, BGE-M3 corpus: 4, query: 12, reranker: 8)
    - Use `ASKME_SKIP_HEAVY_INIT=1` for development
-   - Monitor model memory usage (BGE-M3 + reranker)
+   - Monitor dual-model memory usage (Qwen3-8B + BGE-M3 + Qwen3-Reranker)
+   - Consider using CPU backend for BGE-M3 if MPS memory leaks occur
 
 6. **Evaluation Failures**
    - Check TruLens and Ragas library versions
@@ -579,7 +583,8 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 
-- [BAAI](https://github.com/FlagOpen/FlagEmbedding) for BGE-M3 embeddings and reranker models
+- [BAAI](https://github.com/FlagOpen/FlagEmbedding) for BGE-M3 sparse embeddings
+- [Qwen Team](https://github.com/QwenLM) for Qwen3-Embedding-8B and Qwen3-Reranker-8B models
 - [Milvus](https://milvus.io/) for hybrid search capabilities with sparse BM25 support
 - [TruLens](https://www.trulens.org/) and [Ragas](https://docs.ragas.io/) for evaluation frameworks
 - [FastAPI](https://fastapi.tiangolo.com/) for the high-performance web framework
