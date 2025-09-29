@@ -12,7 +12,7 @@ database:
     username: ""
     password: ""
     secure: false
-    collection_name: "askme_hybrid"
+    collection_name: "askme_qwen3"
   weaviate:
     url: "http://localhost:8081"
     api_key: ""
@@ -29,43 +29,54 @@ hybrid:
   rrf_k: 60        # RRF fusion parameter (typical: 20-100)
   topk: 50         # Initial retrieval candidates
 
-  # Search parameters
+  # Search parameters (BGE-M3 official recommended weights)
   dense_weight: 1.0
-  sparse_weight: 1.0
+  sparse_weight: 0.3  # BGE-M3 optimal sparse weight from official research
   enable_metadata_filter: true
 
 # Embedding Model Configuration
 embedding:
-  model: "BAAI/bge-m3"
-  model_name: "bge-m3"
-  dimension: 1024
+  # Primary backend: hybrid uses Qwen3 for dense + BGE-M3 for sparse
+  backend: "qwen3-hybrid"
+  model: "Qwen/Qwen3-Embedding-8B"
+  model_name: "qwen3-hybrid"
+  dimension: 4096
   max_length: 8192
   normalize_embeddings: true
-  batch_size: 32
+  batch_size: 16
 
-  # BGE-M3 specific settings
+  # Qwen3-specific settings (dense embeddings)
   use_fp16: true
-  pooling_method: "cls"
+  pooling_method: "last_token"
   query_instruction: ""
   passage_instruction: ""
 
+  # Sparse embedding configuration (BGE-M3 for lexical weights)
+  sparse:
+    enabled: true
+    backend: "bge_m3"
+    model: "BAAI/bge-m3"
+    dimension: 1024  # BGE-M3 dense dimension (not used for sparse)
+    batch_size: 4    # BGE-M3 optimal for corpus processing
+    query_batch_size: 12  # BGE-M3 optimal for query processing
+    max_length: 8192  # BGE-M3 official optimal for passages
+    use_fp16: true
+
 # Reranking Configuration
 rerank:
-  # Local reranker (primary)
-  local_model: "BAAI/bge-reranker-v2-m3"
+  # Local reranker (primary) - Qwen3-Reranker-8B optimized settings
+  local_backend: "qwen_local"
+  local_model: "Qwen/Qwen3-Reranker-8B"
   local_enabled: true
-  local_batch_size: 16
-  local_max_length: 1024
-
-  # Cloud reranker (fallback)
-  cohere_enabled: false  # Set via ASKME_ENABLE_COHERE=1
-  cohere_model: "rerank-3.5-turbo"
-  cohere_max_chunks_per_doc: 10
-  cohere_return_documents: true
+  local_batch_size: 8           # Qwen3-Reranker optimal batch size
+  local_max_length: 1024        # Reduced for better performance (Qwen3 supports up to 32k)
+  local_instruction: "Given a web search query, retrieve relevant passages that answer the query"
+  local_use_fp16: true
+  local_flash_attention: false  # Disable for stability
 
   # Reranking parameters
-  top_n: 8           # Final passages for generation
-  score_threshold: 0.0
+  top_n: 8                     # Final passages for generation
+  score_threshold: 0.0         # No score filtering
   enable_cross_encoder: true
 
 # Query Enhancement
@@ -214,11 +225,13 @@ performance:
     ttl_seconds: 3600
     max_size: 1000
 
-  # Batch processing
+  # Batch processing (optimized for dual-model architecture)
   batch:
-    embedding_batch_size: 32
-    rerank_batch_size: 16
-    max_concurrent_requests: 10
+    embedding_batch_size: 16  # Balanced for Qwen3 dense processing
+    sparse_batch_size: 4      # BGE-M3 corpus optimal
+    query_batch_size: 12      # BGE-M3 query optimal
+    rerank_batch_size: 8      # Qwen3-Reranker-8B optimal
+    max_concurrent_requests: 8  # Reduced for memory management
 
   # Timeouts
   timeouts:

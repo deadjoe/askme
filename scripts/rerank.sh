@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 # askme Reranking Script
-# Usage: ./rerank.sh --model=bge_local --take=8
+# Usage: ./rerank.sh --model=qwen_local --take=8
 
 set -euo pipefail
 
-MODEL="bge_local"   # bge_local | cohere
+MODEL="qwen_local"   # qwen_local | bge_local
 TAKE=8
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 VERBOSE=false
@@ -18,7 +18,7 @@ USAGE:
   $0 [OPTIONS]
 
 OPTIONS:
-  --model=NAME     Reranker: bge_local | cohere (default: bge_local)
+  --model=NAME     Reranker: qwen_local | bge_local (default: qwen_local)
   --take=N         Number of passages to keep after rerank (default: 8)
   --api-url=URL    API base URL (default: http://localhost:8080)
   --verbose        Verbose output

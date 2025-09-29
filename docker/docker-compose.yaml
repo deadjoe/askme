@@ -74,8 +74,6 @@ services:
       - ASKME_VECTOR_BACKEND=weaviate
       - ASKME_WEAVIATE_URL=http://weaviate:8080
       - ASKME_LOG_LEVEL=INFO
-      - ASKME_ENABLE_COHERE=${ASKME_ENABLE_COHERE:-0}
-      - COHERE_API_KEY=${COHERE_API_KEY:-}
     volumes:
       - ./configs:/app/configs
       - askme-data:/app/data
@@ -105,10 +103,10 @@ services:
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
       - PERSISTENCE_DATA_PATH=/var/lib/weaviate
       - DEFAULT_VECTORIZER_MODULE=none
-      # Optional: enable all API-based modules (OpenAI/Cohere/HF/etc.).
+      # Optional: enable all API-based modules (OpenAI/HF/etc.).
       # Keeping explicit ENABLE_MODULES is not necessary for our flow, but harmless.
       - ENABLE_API_BASED_MODULES=true
-      # - ENABLE_MODULES=text2vec-openai,text2vec-cohere,text2vec-huggingface,ref2vec-centroid,generative-openai,qna-openai
+      # - ENABLE_MODULES=text2vec-openai,text2vec-huggingface,ref2vec-centroid,generative-openai,qna-openai
       - CLUSTER_HOSTNAME=node1
     volumes:
       - weaviate-data:/var/lib/weaviate

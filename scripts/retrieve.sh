@@ -13,7 +13,7 @@ USE_RRF=true
 RRF_K=60
 USE_HYDE=false
 USE_RAG_FUSION=false
-RERANKER="bge_local"
+RERANKER="qwen_local"
 MAX_PASSAGES=5
 API_BASE_URL="${ASKME_API_URL:-http://localhost:8080}"
 OUTPUT_FORMAT="json"
@@ -45,7 +45,7 @@ OPTIONS:
     --rrf-k=N        RRF k parameter (default: 60)
     --hyde           Enable HyDE query expansion
     --rag-fusion     Enable RAG-Fusion multi-query
-    --reranker=TYPE  Reranker model: bge_local, cohere (default: bge_local)
+    --reranker=TYPE  Reranker model: qwen_local, bge_local (default: qwen_local)
     --max-passages=N Max passages for generation (default: 8)
     --debug          Include debug information in output
     --format=FORMAT  Output format: json, text, table (default: json)
@@ -62,9 +62,6 @@ EXAMPLES:
 
     # Dense search with query enhancement
     $0 "explain transformers" --alpha=0.8 --hyde --rag-fusion
-
-    # Use Cohere reranker
-    $0 "best practices for RAG" --reranker=cohere --debug
 
 ENVIRONMENT VARIABLES:
     ASKME_API_URL    API base URL (default: http://localhost:8080)
@@ -115,8 +112,8 @@ validate_parameters() {
     fi
 
     # Validate reranker
-    if [[ "$RERANKER" != "bge_local" && "$RERANKER" != "cohere" ]]; then
-        log ERROR "Invalid reranker: $RERANKER. Must be 'bge_local' or 'cohere'"
+    if [[ "$RERANKER" != "qwen_local" && "$RERANKER" != "bge_local" ]]; then
+        log ERROR "Invalid reranker: $RERANKER. Must be 'qwen_local' or 'bge_local'"
         exit 1
     fi
 
