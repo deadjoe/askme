@@ -80,7 +80,8 @@ class QueryRequest(BaseModel):
         default=False, description="Use RAG-Fusion multi-query"
     )
     reranker: str = Field(
-        default="bge_local", description="Reranker model: bge_local, cohere"
+        default="qwen_local",
+        description="Reranker model: qwen_local, bge_local",
     )
     max_passages: int = Field(
         default=8, ge=1, le=20, description="Maximum passages for generation"
@@ -140,23 +141,21 @@ class RetrievalResponse(BaseModel):
 router = APIRouter()
 
 
-def normalize_rerank_score(raw_score: float) -> float:
-    """
-    Normalize BGE reranker scores to [0,1] range using sigmoid with calibration.
+def normalize_rerank_score(raw_score: float, backend: str) -> float:
+    """Normalize reranker scores to [0, 1] based on backend semantics."""
 
-    BGE scores are logits typically in [-5, +5] range:
-    - Positive values indicate relevance
-    - Higher values = more relevant
-    - This normalization preserves relative ordering while making scores intuitive
-    """
-    import math
+    if backend == "bge_local":
+        import math
 
-    # Sigmoid normalization with temperature scaling for better distribution
-    # Temperature = 2.0 spreads out the middle range
-    normalized = 1 / (1 + math.exp(-raw_score / 2.0))
+        normalized = 1 / (1 + math.exp(-raw_score / 2.0))
+        return max(0.0, min(1.0, normalized))
 
-    # Ensure bounds
-    return max(0.0, min(1.0, normalized))
+    # Qwen3 returns probabilities after softmax; clamp just in case
+    if backend == "qwen_local":
+        return max(0.0, min(1.0, raw_score))
+
+    # Default fallback for unknown backends
+    return max(0.0, min(1.0, raw_score))
 
 
 @router.post("/", response_model=QueryResponse)
@@ -177,12 +176,7 @@ async def query_documents(
 
     import uuid
 
-    # Validate reranker selection
-    if req.reranker == "cohere" and not settings.rerank.cohere_enabled:
-        raise HTTPException(
-            status_code=400,
-            detail="Cohere reranker not enabled. Set ASKME_ENABLE_COHERE=1",
-        )
+    selected_reranker = req.reranker
 
     # Try real pipeline using app services if available, else fall back to mock
     try:
@@ -193,6 +187,27 @@ async def query_documents(
 
         if not embedding_service or not retriever or not reranking_service:
             raise RuntimeError("Services not initialized")
+
+        available_methods = reranking_service.get_available_methods()
+
+        if selected_reranker in {"qwen_local", "bge_local"}:
+            if selected_reranker not in available_methods:
+                available_str = ", ".join(available_methods) or "none"
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Reranker '{selected_reranker}' is not enabled. "
+                        f"Available local rerankers: {available_str}."
+                    ),
+                )
+        elif selected_reranker not in available_methods:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown reranker '{selected_reranker}'. "
+                    f"Available options: {', '.join(available_methods)}"
+                ),
+            )
 
         t0 = time.monotonic()
         stage = "init"
@@ -253,7 +268,7 @@ async def query_documents(
         citations: List[Citation] = []
         for r in reranked:
             raw_score = float(r.rerank_score)
-            normalized_score = normalize_rerank_score(raw_score)
+            normalized_score = normalize_rerank_score(raw_score, selected_reranker)
             citations.append(
                 Citation(
                     doc_id=r.document.id,
@@ -358,7 +373,7 @@ async def query_documents(
                 fusion_method="rrf" if req.use_rrf else "alpha",
                 alpha=req.alpha,
                 rrf_k=req.rrf_k if req.use_rrf else None,
-                rerank_model=req.reranker,
+                rerank_model=selected_reranker,
                 rerank_scores=[float(r.rerank_score) for r in reranked],
                 latency_ms=int((t3 - t0) * 1000),
                 embedding_latency_ms=int((t1 - t0) * 1000),
@@ -431,7 +446,7 @@ async def query_documents(
             fusion_method="rrf" if req.use_rrf else "alpha",
             alpha=req.alpha,
             rrf_k=req.rrf_k if req.use_rrf else None,
-            rerank_model=req.reranker,
+            rerank_model=settings.rerank.local_backend,
             rerank_scores=[0.92, 0.87, 0.79, 0.71],
             latency_ms=1250,
             embedding_latency_ms=150,
@@ -600,7 +615,7 @@ async def retrieve_documents(
             fusion_method="rrf" if req.use_rrf else "alpha",
             alpha=req.alpha,
             rrf_k=req.rrf_k if req.use_rrf else None,
-            rerank_model="bge_local",
+            rerank_model=settings.rerank.local_backend,
             latency_ms=int((t1 - t0) * 1000),
             embedding_latency_ms=0,
             search_latency_ms=int((t1 - t0) * 1000),
@@ -636,7 +651,7 @@ async def retrieve_documents(
         alpha=req.alpha,
         # Always record provided rrf_k for transparency, even if RRF disabled
         rrf_k=req.rrf_k,
-        rerank_model="bge_local",
+        rerank_model=settings.rerank.local_backend,
         latency_ms=900,
         embedding_latency_ms=120,
         search_latency_ms=780,
