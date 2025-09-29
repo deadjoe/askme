@@ -40,7 +40,8 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
         "collection_name": collection_name,
         "reranker": {
             "local": settings.rerank.local_enabled,
-            "cohere": settings.rerank.cohere_enabled,
+            "backend": settings.rerank.local_backend,
+            "model": settings.rerank.local_model,
         },
     }
 

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 
 from askme.core.config import Settings
-from askme.core.embeddings import BGEEmbeddingService, EmbeddingManager
+from askme.core.embeddings import EmbeddingBackend, EmbeddingManager
 from askme.ingest.document_processor import ChunkingConfig, DocumentProcessingPipeline
 from askme.retriever.base import Document, VectorRetriever
 
@@ -90,7 +90,7 @@ class IngestionService:
     def __init__(
         self,
         vector_retriever: VectorRetriever,
-        embedding_service: BGEEmbeddingService,
+        embedding_service: EmbeddingBackend,
         settings: Settings,
     ):
         self.vector_retriever = vector_retriever

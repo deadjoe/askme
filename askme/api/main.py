@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from askme.api.routes import evaluation, health, ingest, query
 from askme.core.config import get_settings
-from askme.core.embeddings import BGEEmbeddingService
+from askme.core.embeddings import EmbeddingBackend, create_embedding_backend
 from askme.core.logging_config import setup_logging
 from askme.generation.generator import (
     BaseGenerator,
@@ -43,16 +43,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize components
     try:
         # Build services (lazy heavy loads)
-        embedding_service = BGEEmbeddingService(settings.embedding)
+        embedding_service: EmbeddingBackend = create_embedding_backend(
+            settings.embedding
+        )
 
         # Choose retriever backend
         retriever: VectorRetriever
+        expects_sparse = embedding_service.supports_sparse
         if settings.vector_backend.lower() == "weaviate":
             retriever_cfg = {
                 "url": settings.database.weaviate.url,
                 "api_key": settings.database.weaviate.api_key,
                 "class_name": settings.database.weaviate.class_name,
                 "dimension": settings.embedding.dimension,
+                "expects_sparse": expects_sparse,
             }
             retriever = WeaviateRetriever(retriever_cfg)
         else:
@@ -64,26 +68,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "secure": settings.database.milvus.secure,
                 "collection_name": settings.database.milvus.collection_name,
                 "dimension": settings.embedding.dimension,
+                "expects_sparse": expects_sparse,
             }
             retriever = MilvusRetriever(retriever_cfg)
 
-        # Unified Cohere logic: enable via config or env var, only when API key provided
-        enable_cohere_env = os.getenv("ASKME_ENABLE_COHERE", "0") in {
-            "1",
-            "true",
-            "True",
-        }
-        cohere_api_key = (
-            os.getenv("COHERE_API_KEY")
-            if (enable_cohere_env or settings.rerank.cohere_enabled)
-            else None
-        )
-        # Force enable cohere_enabled if API key detected, disable otherwise
-        try:
-            settings.rerank.cohere_enabled = cohere_api_key is not None
-        except Exception:
-            pass
-        reranking_service = RerankingService(settings.rerank, cohere_api_key)
+        reranking_service = RerankingService(settings.rerank)
 
         ingestion_service = IngestionService(retriever, embedding_service, settings)
 
@@ -185,7 +174,9 @@ def create_app() -> FastAPI:
     # Create FastAPI app
     app = FastAPI(
         title="askme",
-        description="Hybrid RAG system with BGE-M3, reranking, and evaluation",
+        description=(
+            "Hybrid RAG system with Qwen3 embeddings, reranking, and evaluation"
+        ),
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
