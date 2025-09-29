@@ -221,9 +221,28 @@ class BGEEmbeddingService(EmbeddingBackend):
 
                     # Normalize dense embedding if configured
                     if self.config.normalize_embeddings:
-                        dense_embedding = dense_embedding / np.linalg.norm(
-                            dense_embedding
+                        norm = np.linalg.norm(dense_embedding)
+                        if norm == 0:
+                            logger.warning(
+                                f"Zero norm detected for text: {text[:50]}, "
+                                "skipping normalization"
+                            )
+                        else:
+                            dense_embedding = dense_embedding / norm
+
+                    # Check for NaN or Inf in BGE-M3 dense embeddings
+                    if np.isnan(dense_embedding).any():
+                        logger.error("NaN detected in BGE-M3 dense embedding!")
+                        logger.error(f"Text: {text[:100]}")
+                        dense_embedding = np.nan_to_num(dense_embedding, nan=0.0)
+                        logger.warning("Replaced NaN with zeros in BGE-M3")
+
+                    if np.isinf(dense_embedding).any():
+                        logger.error("Inf detected in BGE-M3 dense embedding!")
+                        dense_embedding = np.nan_to_num(
+                            dense_embedding, posinf=1.0, neginf=-1.0
                         )
+                        logger.warning("Replaced Inf with ±1.0 in BGE-M3")
 
                     # Convert sparse embedding to dictionary format
                     sparse_dict = self._convert_sparse_embedding(sparse_embedding)
@@ -570,11 +589,26 @@ class BGEEmbeddingService(EmbeddingBackend):
         if hasattr(sparse_array, "indices") and hasattr(sparse_array, "values"):
             # Handle scipy sparse format
             values = zip(sparse_array.indices, sparse_array.values)
-            return {int(idx): float(val) for idx, val in values if val != 0}
+            result: Dict[int | str, float] = {}
+            for idx, val in values:
+                if val != 0:
+                    # Check for NaN/Inf in sparse values
+                    if np.isnan(val) or np.isinf(val):
+                        logger.warning(
+                            f"Invalid sparse value at index {idx}: {val}, skipping"
+                        )
+                        continue
+                    result[int(idx)] = float(val)
+            return result
 
         if isinstance(sparse_array, dict):
             converted: Dict[int | str, float] = {}
             for key, value in sparse_array.items():
+                # Check for NaN/Inf in sparse dictionary values
+                if np.isnan(value) or np.isinf(value):
+                    logger.warning(f"Invalid sparse value for key {key}: {value}")
+                    continue
+
                 try:
                     numeric_key = int(key)
                 except (TypeError, ValueError):
@@ -583,10 +617,18 @@ class BGEEmbeddingService(EmbeddingBackend):
                     converted[numeric_key] = float(value)
 
             return {k: v for k, v in converted.items() if v != 0}
+
         if isinstance(sparse_array, (list, np.ndarray)):
-            return {
-                int(i): float(val) for i, val in enumerate(sparse_array) if val != 0
-            }
+            sparse_result: Dict[int | str, float] = {}
+            for i, val in enumerate(sparse_array):
+                if val != 0:
+                    if np.isnan(val) or np.isinf(val):
+                        logger.warning(
+                            f"Invalid sparse value at index {i}: {val}, skipping"
+                        )
+                        continue
+                    sparse_result[int(i)] = float(val)
+            return sparse_result
 
         return {}
 
@@ -903,7 +945,13 @@ class Qwen3EmbeddingService(EmbeddingBackend):
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Qwen3 embedding model not initialized")
 
-        prepared_texts = [self._apply_instruction(text, instruction) for text in texts]
+        # Filter out empty texts and warn
+        prepared_texts = []
+        for i, text in enumerate(texts):
+            if not text or not text.strip():
+                logger.warning(f"Empty text at index {i}, using placeholder")
+                text = " "  # Use single space as placeholder
+            prepared_texts.append(self._apply_instruction(text, instruction))
         batch_dict = self.tokenizer(
             prepared_texts,
             padding=True,
@@ -930,6 +978,25 @@ class Qwen3EmbeddingService(EmbeddingBackend):
                 pooled = torch_nn_functional.normalize(pooled, p=2, dim=1)
 
         embeddings = pooled.detach().cpu().numpy()
+
+        # Check for NaN or Inf values
+        import numpy as np
+
+        if np.isnan(embeddings).any():
+            logger.error("NaN detected in Qwen3 embeddings!")
+            logger.error(f"Texts: {[t[:50] for t in texts]}")
+            logger.error(f"Embeddings shape: {embeddings.shape}")
+            logger.error(f"NaN count: {np.isnan(embeddings).sum()}")
+            # Replace NaN with zeros as fallback
+            embeddings = np.nan_to_num(embeddings, nan=0.0)
+            logger.warning("Replaced NaN values with zeros")
+
+        if np.isinf(embeddings).any():
+            logger.error("Inf detected in Qwen3 embeddings!")
+            logger.error(f"Inf count: {np.isinf(embeddings).sum()}")
+            embeddings = np.nan_to_num(embeddings, posinf=1.0, neginf=-1.0)
+            logger.warning("Replaced Inf values with ±1.0")
+
         return [row.astype(float).tolist() for row in embeddings]
 
     def _apply_instruction(self, text: str, instruction: Optional[str]) -> str:
