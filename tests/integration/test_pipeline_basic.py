@@ -17,7 +17,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import after path modification to avoid E402
 from askme.core.config import EmbeddingConfig, RerankConfig, Settings  # noqa: E402
-from askme.core.embeddings import BGEEmbeddingService  # noqa: E402
+from askme.core.embeddings import (  # noqa: E402
+    BGEEmbeddingService,
+    HybridEmbeddingService,
+    Qwen3EmbeddingService,
+    create_embedding_backend,
+)
 from askme.ingest.document_processor import DocumentProcessingPipeline  # noqa: E402
 from askme.ingest.ingest_service import IngestionService  # noqa: E402
 from askme.rerank.rerank_service import RerankingService  # noqa: E402
@@ -83,20 +88,23 @@ The system implements a complete RAG pipeline with:
         print(f"   ❌ Document processing failed: {e}")
         pytest.fail(f"Document processing failed: {e}")
 
-    # Test 3: Embedding service (mock without actual model loading)
-    print("\n3️⃣ Testing embedding service initialization...")
+    # Test 3: Embedding service (factory without actual model loading)
+    print("\n3️⃣ Testing embedding service factory...")
     try:
         embedding_config = EmbeddingConfig(
-            model="BAAI/bge-m3", batch_size=4, dimension=1024
+            backend="qwen3-hybrid",
+            model="Qwen/Qwen3-Embedding-8B",
+            model_name="qwen3-hybrid",
+            batch_size=8,
+            dimension=4096,
         )
-        embedding_service = BGEEmbeddingService(embedding_config)
+        embedding_service = create_embedding_backend(embedding_config)
 
-        # Test configuration
-        info = await embedding_service.get_model_info()
-        print(f"   ✓ Embedding service configured: {info['model_name']}")
-        print(
-            f"   ✓ Batch size: {info['batch_size']}, Dimension: {info['embedding_dim']}"
-        )
+        # Test basic properties without initializing models
+        print(f"   ✓ Embedding service type: {type(embedding_service).__name__}")
+        print(f"   ✓ Supports sparse vectors: {embedding_service.supports_sparse}")
+        print(f"   ✓ Config model: {embedding_service.config.model}")
+        print(f"   ✓ Config dimension: {embedding_service.config.dimension}")
 
     except Exception as e:
         print(f"   ❌ Embedding service test failed: {e}")
@@ -106,9 +114,9 @@ The system implements a complete RAG pipeline with:
     print("\n4️⃣ Testing reranking service...")
     try:
         rerank_config = RerankConfig(
-            local_model="BAAI/bge-reranker-v2.5-gemma2-lightweight",
+            local_backend="qwen_local",
+            local_model="Qwen/Qwen3-Reranker-8B",
             local_enabled=True,
-            cohere_enabled=False,
             top_n=5,
         )
         reranking_service = RerankingService(rerank_config)

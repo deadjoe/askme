@@ -41,13 +41,21 @@ class TestEmbeddingConfig:
     def test_default_values(self: Any) -> None:
         """Test default embedding configuration."""
         config = EmbeddingConfig()
-        assert config.model == "BAAI/bge-m3"
-        assert config.dimension == 1024
-        assert config.batch_size == 32
+        assert config.backend == "qwen3-hybrid"
+        assert config.model == "Qwen/Qwen3-Embedding-8B"
+        assert config.dimension == 4096
+        assert config.batch_size == 16
+        # Test sparse config defaults
+        assert config.sparse.enabled is True
+        assert config.sparse.backend == "bge_m3"
+        assert config.sparse.model == "BAAI/bge-m3"
 
     def test_custom_values(self: Any) -> None:
         """Test custom embedding configuration."""
-        config = EmbeddingConfig(model="custom-model", dimension=512, batch_size=16)
+        config = EmbeddingConfig(
+            backend="custom-backend", model="custom-model", dimension=512, batch_size=16
+        )
+        assert config.backend == "custom-backend"
         assert config.model == "custom-model"
         assert config.dimension == 512
         assert config.batch_size == 16
@@ -84,22 +92,25 @@ class TestRerankConfig:
         """Test default reranking configuration."""
         config = RerankConfig()
         assert config.local_enabled is True
-        assert config.cohere_enabled is False
         assert config.top_n == 8
         assert config.score_threshold == 0.0
+        assert config.local_backend == "qwen_local"
+        assert config.local_model == "Qwen/Qwen3-Reranker-8B"
 
     def test_custom_values(self: Any) -> None:
         """Test custom reranking configuration."""
         config = RerankConfig(
             local_enabled=False,
-            cohere_enabled=True,
             top_n=5,
             score_threshold=0.7,
+            local_backend="bge_local",
+            local_model="BAAI/bge-reranker-v2.5",
         )
         assert config.local_enabled is False
-        assert config.cohere_enabled is True
         assert config.top_n == 5
         assert config.score_threshold == 0.7
+        assert config.local_backend == "bge_local"
+        assert config.local_model == "BAAI/bge-reranker-v2.5"
 
 
 class TestSettings:
@@ -118,6 +129,6 @@ class TestSettings:
         """Test accessing nested configuration values."""
         settings = Settings()
         assert settings.database.host == "localhost"
-        assert settings.embedding.model == "BAAI/bge-m3"
+        assert settings.embedding.model == "Qwen/Qwen3-Embedding-8B"
         assert settings.hybrid.alpha == 0.5
         assert settings.rerank.top_n == 8
