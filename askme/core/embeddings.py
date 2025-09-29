@@ -822,8 +822,8 @@ class Qwen3EmbeddingService(EmbeddingBackend):
         }
         if self.device == "cuda":
             model_kwargs.setdefault("device_map", "auto")
-        if self.device in {"cuda", "mps"} and self.config.use_fp16:
-            model_kwargs.setdefault("torch_dtype", torch_module.float16)
+        # Note: torch_dtype is already set correctly by _resolve_dtype()
+        # which forces FP32 on MPS to avoid numerical instability
 
         self.model = AutoModel.from_pretrained(self.config.model, **model_kwargs)
         if self.device == "cuda":
@@ -855,7 +855,14 @@ class Qwen3EmbeddingService(EmbeddingBackend):
     def _resolve_dtype(self) -> Any:
         if torch_module is None:
             return None
-        if self.device in {"cuda", "mps"} and self.config.use_fp16:
+        # MPS backend has known issues with FP16 numerical stability
+        # Force FP32 on MPS to avoid NaN issues
+        if self.device == "mps":
+            logger.warning(
+                "Forcing FP32 on MPS device due to known FP16 stability issues"
+            )
+            return torch_module.float32
+        if self.device == "cuda" and self.config.use_fp16:
             return torch_module.float16
         return torch_module.float32
 
@@ -973,15 +980,45 @@ class Qwen3EmbeddingService(EmbeddingBackend):
             outputs = self.model(**batch_dict)
             hidden_states = outputs.last_hidden_state
             attention_mask = batch_dict.get("attention_mask")
+
+            # Debug: Check hidden states for NaN
+            import numpy as np
+
+            if torch_module.isnan(hidden_states).any():
+                logger.error("NaN detected in model hidden_states output!")
+                logger.error(f"Hidden states shape: {hidden_states.shape}")
+                logger.error(
+                    f"NaN count: {torch_module.isnan(hidden_states).sum().item()}"
+                )
+
             pooled = self._last_token_pool(hidden_states, attention_mask)
+
+            # Debug: Check pooled embeddings before normalization
+            if torch_module.isnan(pooled).any():
+                logger.error("NaN detected after pooling, before normalization!")
+                logger.error(f"Pooled shape: {pooled.shape}")
+
             if self.config.normalize_embeddings and torch_nn_functional is not None:
-                pooled = torch_nn_functional.normalize(pooled, p=2, dim=1)
+                # Check for zero-norm vectors before normalization
+                norms = torch_module.linalg.norm(pooled, dim=1, keepdim=True)
+                if torch_module.any(norms == 0):
+                    logger.warning("Zero-norm vectors detected before normalization!")
+                    logger.warning(f"Zero-norm count: {(norms == 0).sum().item()}")
+                    # Add small epsilon to avoid division by zero
+                    pooled = torch_nn_functional.normalize(pooled + 1e-12, p=2, dim=1)
+                else:
+                    pooled = torch_nn_functional.normalize(pooled, p=2, dim=1)
+
+                # Debug: Check after normalization
+                if torch_module.isnan(pooled).any():
+                    logger.error("NaN detected AFTER normalization!")
+                    logger.error(
+                        f"NaN count: {torch_module.isnan(pooled).sum().item()}"
+                    )
 
         embeddings = pooled.detach().cpu().numpy()
 
-        # Check for NaN or Inf values
-        import numpy as np
-
+        # Check for NaN or Inf values (np already imported above)
         if np.isnan(embeddings).any():
             logger.error("NaN detected in Qwen3 embeddings!")
             logger.error(f"Texts: {[t[:50] for t in texts]}")
@@ -1009,15 +1046,37 @@ class Qwen3EmbeddingService(EmbeddingBackend):
     def _last_token_pool(self, hidden_states: Any, attention_mask: Any) -> Any:
         if torch_module is None:
             raise RuntimeError("PyTorch is required for Qwen3 embeddings")
+
+        # Check for left padding (all sequences end with valid tokens)
         left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
         if bool(left_padding):
             return hidden_states[:, -1]
+
+        # Get sequence lengths (last valid token position)
         sequence_lengths = attention_mask.sum(dim=1) - 1
         batch_size = hidden_states.shape[0]
-        return hidden_states[
+
+        # Ensure sequence_lengths are valid indices
+        max_seq_len = hidden_states.shape[1]
+        sequence_lengths = torch_module.clamp(sequence_lengths, 0, max_seq_len - 1)
+
+        # Extract last token embeddings for each sequence
+        pooled = hidden_states[
             torch_module.arange(batch_size, device=hidden_states.device),
             sequence_lengths,
         ]
+
+        # Debug: check for NaN in pooled output before normalization
+        if torch_module.isnan(pooled).any():
+            logger.error("NaN detected in pooled embeddings BEFORE normalization!")
+            logger.error(f"Pooled shape: {pooled.shape}")
+            logger.error(f"NaN count: {torch_module.isnan(pooled).sum().item()}")
+            logger.error(f"Sequence lengths: {sequence_lengths.cpu().tolist()}")
+            logger.error(
+                f"Attention mask sum: {attention_mask.sum(dim=1).cpu().tolist()}"
+            )
+
+        return pooled
 
     async def cleanup(self) -> None:
         try:
