@@ -36,7 +36,6 @@ Options:
   --ollama-endpoint URL   Ollama endpoint address (default: http://localhost:11434)
   --openai-url URL        OpenAI compatible endpoint (default: http://localhost:11434/v1)
   --ragas-model MODEL     Ragas evaluation model (default: gpt-oss:20b)
-  --enable-cohere         Enable Cohere reranking (requires COHERE_API_KEY)
   --vector-backend TYPE   Vector database backend (milvus|weaviate|qdrant, default: milvus)
   --skip-heavy-init       Skip heavy service initialization (fast startup)
   --log-level LEVEL       Log level (DEBUG|INFO|WARNING|ERROR, default: INFO)
@@ -46,7 +45,6 @@ Examples:
   $SCRIPT_NAME                                    # Start with default configuration
   $SCRIPT_NAME --port 8081 --reload              # Specify port and enable hot reload
   $SCRIPT_NAME --ollama-model llama3.1:latest    # Use different Ollama model
-  $SCRIPT_NAME --enable-cohere                   # Enable Cohere reranking
   $SCRIPT_NAME --dry-run                         # Show configuration only
 
 EOF
@@ -64,11 +62,15 @@ DEFAULT_OLLAMA_MODEL="gpt-oss:120b-cloud"
 DEFAULT_OLLAMA_ENDPOINT="http://localhost:11434"
 DEFAULT_OPENAI_URL="http://localhost:11434/v1"
 DEFAULT_RAGAS_MODEL="gpt-oss:20b"
-DEFAULT_ENABLE_COHERE=false
 DEFAULT_VECTOR_BACKEND="milvus"
 DEFAULT_SKIP_HEAVY_INIT=false
 DEFAULT_LOG_LEVEL="INFO"
 DEFAULT_DRY_RUN=false
+DEFAULT_EMBEDDING_BACKEND="qwen3-hybrid"
+DEFAULT_EMBEDDING_MODEL="Qwen/Qwen3-Embedding-8B"
+DEFAULT_EMBEDDING_DIMENSION="4096"
+DEFAULT_RERANK_BACKEND="qwen_local"
+DEFAULT_RERANK_MODEL="Qwen/Qwen3-Reranker-8B"
 
 # Parse command line arguments
 PORT="$DEFAULT_PORT"
@@ -81,11 +83,15 @@ OLLAMA_MODEL="$DEFAULT_OLLAMA_MODEL"
 OLLAMA_ENDPOINT="$DEFAULT_OLLAMA_ENDPOINT"
 OPENAI_URL="$DEFAULT_OPENAI_URL"
 RAGAS_MODEL="$DEFAULT_RAGAS_MODEL"
-ENABLE_COHERE="$DEFAULT_ENABLE_COHERE"
 VECTOR_BACKEND="$DEFAULT_VECTOR_BACKEND"
 SKIP_HEAVY_INIT="$DEFAULT_SKIP_HEAVY_INIT"
 LOG_LEVEL="$DEFAULT_LOG_LEVEL"
 DRY_RUN="$DEFAULT_DRY_RUN"
+EMBEDDING_BACKEND="${ASKME_EMBEDDING__BACKEND:-$DEFAULT_EMBEDDING_BACKEND}"
+EMBEDDING_MODEL="${ASKME_EMBEDDING__MODEL:-$DEFAULT_EMBEDDING_MODEL}"
+EMBEDDING_DIMENSION="${ASKME_EMBEDDING__DIMENSION:-$DEFAULT_EMBEDDING_DIMENSION}"
+RERANK_BACKEND="${ASKME_RERANK__LOCAL_BACKEND:-$DEFAULT_RERANK_BACKEND}"
+RERANK_MODEL="${ASKME_RERANK__LOCAL_MODEL:-$DEFAULT_RERANK_MODEL}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -132,10 +138,6 @@ while [[ $# -gt 0 ]]; do
         --ragas-model)
             RAGAS_MODEL="$2"
             shift 2
-            ;;
-        --enable-cohere)
-            ENABLE_COHERE=true
-            shift
             ;;
         --vector-backend)
             VECTOR_BACKEND="$2"
@@ -197,13 +199,6 @@ export OPENAI_API_KEY="ollama-local"
 export ASKME_RAGAS_LLM_MODEL="$RAGAS_MODEL"
 export ASKME_LOG_LEVEL="$LOG_LEVEL"
 
-if [[ "$ENABLE_COHERE" == "true" ]]; then
-    export ASKME_ENABLE_COHERE=1
-    if [[ -z "${COHERE_API_KEY:-}" ]]; then
-        log WARNING "Cohere enabled but COHERE_API_KEY environment variable not set"
-    fi
-fi
-
 if [[ "$SKIP_HEAVY_INIT" == "true" ]]; then
     export ASKME_SKIP_HEAVY_INIT=1
 fi
@@ -213,7 +208,6 @@ fi
 ALL_PARAM_KEYS=(
     "ASKME_VECTOR_BACKEND"
     "ASKME_ENABLE_OLLAMA"
-    "ASKME_ENABLE_COHERE"
     "ASKME_SKIP_HEAVY_INIT"
     "ASKME_DATABASE__HOST"
     "ASKME_DATABASE__PORT"
@@ -244,6 +238,7 @@ ALL_PARAM_KEYS=(
     "COHERE_API_KEY"
     "ASKME_RAGAS_LLM_MODEL"
     "ASKME_RAGAS_EMBED_MODEL"
+    "ASKME_EMBEDDING__BACKEND"
     "ASKME_EMBEDDING__MODEL"
     "ASKME_EMBEDDING__DIMENSION"
     "ASKME_EMBEDDING__BATCH_SIZE"
@@ -253,6 +248,8 @@ ALL_PARAM_KEYS=(
     "ASKME_HYBRID__RRF_K"
     "ASKME_HYBRID__TOPK"
     "ASKME_RERANK__LOCAL_MODEL"
+    "ASKME_RERANK__LOCAL_BACKEND"
+    "ASKME_RERANK__LOCAL_INSTRUCTION"
     "ASKME_RERANK__TOP_N"
     "ASKME_RERANK__COHERE_MODEL"
     "ASKME_API__HOST"
@@ -292,6 +289,9 @@ show_config_summary() {
     local active_params=($(get_active_params))
     local active_count=${#active_params[@]}
     local usage_percentage=$((active_count * 100 / total_params))
+    local embedding_backend="${ASKME_EMBEDDING__BACKEND:-$EMBEDDING_BACKEND}"
+    local embedding_model="${ASKME_EMBEDDING__MODEL:-$EMBEDDING_MODEL}"
+    local embedding_dimension="${ASKME_EMBEDDING__DIMENSION:-$EMBEDDING_DIMENSION}"
 
     echo
     echo "======================================================================"
@@ -310,11 +310,17 @@ show_config_summary() {
     echo "   • Hot reload: $RELOAD"
     echo "   • Log level: $LOG_LEVEL"
     echo
+    echo "🧠 Embedding Configuration:"
+    echo "   • Backend: $embedding_backend"
+    echo "   • Model: $embedding_model"
+    echo "   • Dimension: $embedding_dimension"
+    echo
     echo "🤖 AI Model Configuration:"
     echo "   • Ollama model: $OLLAMA_MODEL"
     echo "   • Ollama endpoint: $OLLAMA_ENDPOINT"
     echo "   • Ragas model: $RAGAS_MODEL"
-    echo "   • Cohere reranking: $ENABLE_COHERE"
+    echo "   • Reranker backend: $RERANK_BACKEND"
+    echo "   • Reranker model: $RERANK_MODEL"
     echo
     echo "💾 Database Configuration:"
     echo "   • Milvus host: $MILVUS_HOST:$MILVUS_PORT"
