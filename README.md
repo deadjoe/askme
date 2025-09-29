@@ -13,7 +13,7 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system featuring du
 ## Features
 
 - **Dual-Model Hybrid Search**: Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights) with configurable fusion (Alpha, RRF, relative scoring)
-- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback and Cohere Rerank 3.5 integration
+- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
 - **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
 - **Comprehensive Evaluation**: TruLens RAG Triad, Ragas v0.2+, offline local LLM judges, and embedding similarity metrics with A/B testing capabilities
@@ -31,7 +31,7 @@ LLM Generate → Answer with Citations → Evaluate
 
 - **Embeddings**: Hybrid dual-model architecture using Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights only)
 - **Vector Database**: Weaviate (primary), Milvus 2.5+/Qdrant alternatives with hybrid search support
-- **Reranking**: Qwen/Qwen3-Reranker-8B (local default), optional BGE reranker and Cohere Rerank 3.5 fallback
+- **Reranking**: Qwen/Qwen3-Reranker-8B (local default), optional BGE reranker fallback
 - **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
 - **Evaluation**: TruLens + Ragas with configurable embedding backends, local LLM judges, and automated quality thresholds
 - **Generation**: OpenAI-compatible, local Ollama, or template-based approaches
@@ -296,7 +296,6 @@ All configuration can be overridden using environment variables with the `ASKME_
 |----------|---------|-------------|
 | `OPENAI_BASE_URL` | - | OpenAI-compatible API endpoint |
 | `OPENAI_API_KEY` | - | OpenAI API key |
-| `COHERE_API_KEY` | - | Cohere API key (required for Cohere reranking) |
 | `ASKME_RAGAS_LLM_MODEL` | - | Override LLM model for Ragas evaluation |
 | `ASKME_RAGAS_EMBED_MODEL` | `BAAI/bge-m3` | Override embedding model for Ragas |
 
