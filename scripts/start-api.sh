@@ -32,7 +32,7 @@ Options:
   --workers N             Number of worker processes (default: 1)
   --milvus-host HOST      Milvus host address (default: 127.0.0.1)
   --milvus-port PORT      Milvus port (default: 19530)
-  --ollama-model MODEL    Ollama model name (default: qwen3:30b-a3b)
+  --ollama-model MODEL    Ollama model name (default: gpt-oss:120b-cloud)
   --ollama-endpoint URL   Ollama endpoint address (default: http://localhost:11434)
   --openai-url URL        OpenAI compatible endpoint (default: http://localhost:11434/v1)
   --ragas-model MODEL     Ragas evaluation model (default: gpt-oss:20b)
@@ -42,10 +42,11 @@ Options:
   --dry-run               Show configuration only, do not start service
 
 Examples:
-  $SCRIPT_NAME                                    # Start with default configuration
-  $SCRIPT_NAME --port 8081 --reload              # Specify port and enable hot reload
-  $SCRIPT_NAME --ollama-model llama3.1:latest    # Use different Ollama model
-  $SCRIPT_NAME --dry-run                         # Show configuration only
+  $SCRIPT_NAME                                       # Start with default configuration
+  $SCRIPT_NAME --port 8081 --reload                 # Specify port and enable hot reload
+  $SCRIPT_NAME --ollama-model gpt-oss:30b           # Use different Ollama model
+  $SCRIPT_NAME --vector-backend weaviate --reload   # Use Weaviate with hot reload
+  $SCRIPT_NAME --dry-run                            # Show configuration only
 
 EOF
 }
@@ -308,21 +309,32 @@ show_config_summary() {
     echo "   • Hot reload: $RELOAD"
     echo "   • Log level: $LOG_LEVEL"
     echo
-    echo "🧠 Embedding Configuration:"
-    echo "   • Backend: $embedding_backend"
-    echo "   • Model: $embedding_model"
-    echo "   • Dimension: $embedding_dimension"
+    echo "🧠 Dual-Model Embedding Architecture:"
+    echo "   • Architecture: qwen3-hybrid (Qwen3 dense + BGE-M3 sparse)"
+    echo "   • Dense Model: $embedding_model (${embedding_dimension}D)"
+    echo "   • Sparse Model: BAAI/bge-m3 (lexical weights)"
+    echo "   • Dense Batch: 16, Sparse Corpus: 4, Query: 12"
     echo
     echo "🤖 AI Model Configuration:"
     echo "   • Ollama model: $OLLAMA_MODEL"
     echo "   • Ollama endpoint: $OLLAMA_ENDPOINT"
     echo "   • Ragas model: $RAGAS_MODEL"
-    echo "   • Reranker backend: $RERANK_BACKEND"
-    echo "   • Reranker model: $RERANK_MODEL"
     echo
-    echo "💾 Database Configuration:"
-    echo "   • Milvus host: $MILVUS_HOST:$MILVUS_PORT"
+    echo "🎯 Reranking Configuration:"
+    echo "   • Primary: $RERANK_MODEL (batch=8, optimized)"
+    echo "   • Fallback: BGE reranker (local, legacy support)"
+    echo "   • Top-N passages: 8"
+    echo
+    echo "💾 Vector Database Configuration:"
+    echo "   • Backend: $VECTOR_BACKEND"
+    echo "   • Connection: $MILVUS_HOST:$MILVUS_PORT"
     echo "   • Skip heavy init: $SKIP_HEAVY_INIT"
+    echo
+    echo "🔍 Hybrid Search Configuration:"
+    echo "   • Mode: RRF (Reciprocal Rank Fusion)"
+    echo "   • Dense weight: 1.0, Sparse weight: 0.3"
+    echo "   • Top-K candidates: 50, RRF-K: 60"
+    echo "   • Alpha: 0.5 (balanced dense/sparse)"
     echo
     echo "🔧 Active Environment Variables ($active_count/$total_params):"
     echo "   ┌─────────────────────────────────────────────────────────────────────┐"
