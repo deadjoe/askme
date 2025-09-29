@@ -12,8 +12,8 @@ Production-ready hybrid RAG (Retrieval-Augmented Generation) system featuring du
 
 ## Features
 
-- **Dual-Model Hybrid Search**: Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights) with configurable fusion (Alpha, RRF, relative scoring)
-- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback
+- **Dual-Model Hybrid Search**: Qwen3-Embedding-4B (2560D dense) + BGE-M3 (sparse lexical weights) with configurable fusion (Alpha, RRF, relative scoring)
+- **Intelligent Reranking**: Local Qwen3-Reranker-4B with optional BGE fallback
 - **Query Enhancement**: HyDE and RAG-Fusion techniques for improved recall and comprehensive coverage
 - **Multi-Backend Support**: Weaviate (primary), Milvus 2.5+ (with sparse BM25), and Qdrant vector databases
 - **Comprehensive Evaluation**: TruLens RAG Triad, Ragas v0.2+, offline local LLM judges, and embedding similarity metrics with A/B testing capabilities
@@ -29,9 +29,9 @@ LLM Generate → Answer with Citations → Evaluate
 
 ### Core Technologies
 
-- **Embeddings**: Hybrid dual-model architecture using Qwen3-Embedding-8B (4096D dense) + BGE-M3 (sparse lexical weights only)
+- **Embeddings**: Hybrid dual-model architecture using Qwen3-Embedding-4B (2560D dense) + BGE-M3 (sparse lexical weights only)
 - **Vector Database**: Weaviate (primary), Milvus 2.5+/Qdrant alternatives with hybrid search support
-- **Reranking**: Qwen/Qwen3-Reranker-8B (local default), optional BGE reranker fallback
+- **Reranking**: Qwen/Qwen3-Reranker-4B (local default), optional BGE reranker fallback
 - **Framework**: FastAPI with Python 3.10+, uvicorn ASGI server
 - **Evaluation**: TruLens + Ragas with configurable embedding backends, local LLM judges, and automated quality thresholds
 - **Generation**: OpenAI-compatible, local Ollama, or template-based approaches
@@ -142,8 +142,8 @@ hybrid:
 # Dual-model embedding configuration
 embedding:
   backend: qwen3-hybrid           # Hybrid: Qwen3 dense + BGE-M3 sparse
-  model: Qwen/Qwen3-Embedding-8B  # Primary dense embedding model
-  dimension: 4096                 # Qwen3 embedding dimension
+  model: Qwen/Qwen3-Embedding-4B  # Primary dense embedding model
+  dimension: 2560                 # Qwen3 embedding dimension
   normalize_embeddings: true
   batch_size: 16                  # Optimized for Qwen3 dense processing
   pooling_method: last_token      # Qwen3 optimal pooling
@@ -161,7 +161,7 @@ embedding:
 # Reranking
 rerank:
   local_backend: qwen_local
-  local_model: Qwen/Qwen3-Reranker-8B
+  local_model: Qwen/Qwen3-Reranker-4B
   local_enabled: true
   top_n: 8
 
@@ -246,7 +246,7 @@ All configuration can be overridden using environment variables with the `ASKME_
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ASKME_EMBEDDING__BACKEND` | `qwen3-hybrid` | Embedding backend (`qwen3-hybrid`, `qwen3`, `bge_m3`) |
-| `ASKME_EMBEDDING__MODEL` | `Qwen/Qwen3-Embedding-8B` | Dense embedding model (Qwen3) |
+| `ASKME_EMBEDDING__MODEL` | `Qwen/Qwen3-Embedding-4B` | Dense embedding model (Qwen3) |
 | `ASKME_EMBEDDING__DIMENSION` | `4096` | Dense embedding dimension |
 | `ASKME_EMBEDDING__BATCH_SIZE` | `16` | Embedding batch size |
 | `ASKME_EMBEDDING__MAX_LENGTH` | `8192` | Maximum input length |
@@ -277,9 +277,9 @@ All configuration can be overridden using environment variables with the `ASKME_
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ASKME_RERANK__LOCAL_BACKEND` | `qwen_local` | Local reranking backend |
-| `ASKME_RERANK__LOCAL_MODEL` | `Qwen/Qwen3-Reranker-8B` | Local reranking model |
+| `ASKME_RERANK__LOCAL_MODEL` | `Qwen/Qwen3-Reranker-4B` | Local reranking model |
 | `ASKME_RERANK__LOCAL_ENABLED` | `true` | Enable local reranking |
-| `ASKME_RERANK__LOCAL_BATCH_SIZE` | `8` | Qwen3-Reranker-8B optimal batch size |
+| `ASKME_RERANK__LOCAL_BATCH_SIZE | 12` | Qwen3-Reranker-4B optimal batch size |
 | `ASKME_RERANK__TOP_N` | `8` | Final reranked passages |
 
 #### API Server Configuration
@@ -305,7 +305,7 @@ All configuration can be overridden using environment variables with the `ASKME_
 | `ASKME_PERFORMANCE__BATCH__EMBEDDING_BATCH_SIZE` | `16` | Dense embedding batch size (Qwen3 optimal) |
 | `ASKME_PERFORMANCE__BATCH__SPARSE_BATCH_SIZE` | `4` | Sparse embedding batch size (BGE-M3 corpus) |
 | `ASKME_PERFORMANCE__BATCH__QUERY_BATCH_SIZE` | `12` | Query batch size (BGE-M3 query optimal) |
-| `ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE` | `8` | Qwen3-Reranker-8B optimal batch size |
+| `ASKME_PERFORMANCE__BATCH__RERANK_BATCH_SIZE` | `8` | Qwen3-Reranker-4B optimal batch size |
 | `ASKME_PERFORMANCE__TIMEOUTS__RETRIEVAL_TIMEOUT` | `15` | Retrieval timeout (seconds) |
 | `ASKME_PERFORMANCE__TIMEOUTS__RERANK_TIMEOUT` | `30` | Reranking timeout (seconds) |
 | `ASKME_PERFORMANCE__TIMEOUTS__GENERATION_TIMEOUT` | `60` | Generation timeout (seconds) |
@@ -554,7 +554,7 @@ uv run bandit -r askme
    - Monitor embedding service latency
 
 4. **Poor Reranking Quality**
-   - Ensure local Qwen3-Reranker-8B model is properly loaded
+   - Ensure local Qwen3-Reranker-4B model is properly loaded
    - Verify batch size settings (optimal: 8 for Qwen3-Reranker)
    - Check BGE fallback configuration if needed
    - Verify reranking score thresholds
@@ -583,7 +583,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Acknowledgments
 
 - [BAAI](https://github.com/FlagOpen/FlagEmbedding) for BGE-M3 sparse embeddings
-- [Qwen Team](https://github.com/QwenLM) for Qwen3-Embedding-8B and Qwen3-Reranker-8B models
+- [Qwen Team](https://github.com/QwenLM) for Qwen3-Embedding-8B and Qwen3-Reranker-4B models
 - [Milvus](https://milvus.io/) for hybrid search capabilities with sparse BM25 support
 - [TruLens](https://www.trulens.org/) and [Ragas](https://docs.ragas.io/) for evaluation frameworks
 - [FastAPI](https://fastapi.tiangolo.com/) for the high-performance web framework

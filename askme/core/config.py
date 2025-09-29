@@ -75,9 +75,9 @@ class EmbeddingConfig(BaseSettings):
     """Embedding model configuration."""
 
     backend: str = "qwen3-hybrid"
-    model: str = "Qwen/Qwen3-Embedding-8B"
+    model: str = "Qwen/Qwen3-Embedding-4B"
     model_name: str = "qwen3-hybrid"
-    dimension: int = 4096
+    dimension: int = 2560
     max_length: int = 8192
     normalize_embeddings: bool = True
     batch_size: int = 16
@@ -103,9 +103,9 @@ class RerankConfig(BaseSettings):
     """Reranking configuration."""
 
     local_backend: str = "qwen_local"  # qwen_local | bge_local
-    local_model: str = "Qwen/Qwen3-Reranker-8B"
+    local_model: str = "Qwen/Qwen3-Reranker-4B"
     local_enabled: bool = True
-    local_batch_size: int = 8  # Qwen3-Reranker optimal batch size
+    local_batch_size: int = 12  # Qwen3-Reranker-4B optimal batch size
     local_max_length: int = 1024  # Optimized length
     local_instruction: str = (
         "Given a web search query, retrieve relevant passages that answer the query"
@@ -291,7 +291,7 @@ class PerformanceConfig(BaseSettings):
         embedding_batch_size: int = 16  # Balanced for Qwen3 dense processing
         sparse_batch_size: int = 4  # BGE-M3 corpus optimal
         query_batch_size: int = 12  # BGE-M3 query optimal
-        rerank_batch_size: int = 8  # Qwen3-Reranker-8B optimal
+        rerank_batch_size: int = 12  # Qwen3-Reranker-4B optimal
         max_concurrent_requests: int = 8  # Reduced for memory management
 
     class TimeoutConfig(BaseSettings):

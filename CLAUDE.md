@@ -3,7 +3,7 @@
 ## Project Overview
 AskMe is a production-ready hybrid RAG (Retrieval-Augmented Generation) system that implements:
 - **Hybrid Search**: BM25/sparse + dense vector retrieval with configurable fusion (alpha/RRF)
-- **Intelligent Reranking**: Local Qwen3-Reranker-8B with optional BGE fallback
+- **Intelligent Reranking**: Local Qwen3-Reranker-4B with optional BGE fallback
 - **Query Enhancement**: HyDE and RAG-Fusion for improved recall
 - **Comprehensive Evaluation**: TruLens RAG Triad + Ragas metrics
 - **Multi-backend Support**: Weaviate (primary) / Milvus 2.5+ / Qdrant
@@ -15,9 +15,9 @@ Rerank (topN=8) → LLM Generate → Answer with Citations → Evaluate
 ```
 
 ## Key Technologies
-- **Embeddings**: Default Qwen3-Embedding-8B dense encoder with optional BGE-M3 hybrid encoder when sparse vectors are required
+- **Embeddings**: Default Qwen3-Embedding-4B dense encoder with optional BGE-M3 hybrid encoder when sparse vectors are required
 - **Vector DB**: Weaviate (primary) with hybrid search support
-- **Reranker**: Qwen/Qwen3-Reranker-8B (local)
+- **Reranker**: Qwen/Qwen3-Reranker-4B (local)
 - **Fallback**: Optional BGE reranker for sparse-aware scenarios
 - **Evaluation**: TruLens + Ragas v0.2+
 - **Framework**: FastAPI + Python 3.10+
@@ -65,7 +65,7 @@ Key parameters:
 - `hybrid.alpha`: 0.5 (equal weight), >0.5 (dense bias), <0.5 (sparse bias)
 - `hybrid.rrf_k`: 60 (RRF fusion parameter)
 - `rerank.local_model`: Qwen3 reranker model path
-- `embedding.model`: Qwen/Qwen3-Embedding-8B
+- `embedding.model`: Qwen/Qwen3-Embedding-4B
 - `embedding.backend`: qwen3 (set to `bge_m3` to enable sparse-aware embeddings)
 
 ## Development Workflow
@@ -154,7 +154,7 @@ pytest askme/tests/e2e/ --slow
 ```bash
 # Required
 ASKME_VECTOR_BACKEND=weaviate  # or milvus, qdrant
-ASKME_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
+ASKME_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
 
 # Optional
 ASKME_ENABLE_OLLAMA=1        # Enable local Ollama generator
