@@ -17,6 +17,7 @@ from askme.retriever.milvus_retriever import MilvusRetriever
 async def test_sparse_search_with_filters() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
+    r.has_sparse_vector = True  # ensure sparse path is available for the test
     # one hit
     hit = MagicMock()
     hit.entity.get.side_effect = lambda k, d=None: {
@@ -34,6 +35,7 @@ async def test_sparse_search_with_filters() -> None:
 async def test_hybrid_search_rrf_native_error_fallback() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
+    r.has_sparse_vector = True  # allow hybrid path to use sparse fallback
     # Force native path but make hybrid_search raise so it falls back
     with patch("askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", True):
         r.collection.hybrid_search.side_effect = RuntimeError("boom")
@@ -77,6 +79,7 @@ async def test_create_collection_when_exists_early_return() -> None:
 async def test_disconnect_releases_collection() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
+    r.has_sparse_vector = True  # exercise sparse error path
     with patch("askme.retriever.milvus_retriever.connections") as c:
         await r.disconnect()
         r.collection.release.assert_called_once()
@@ -123,6 +126,7 @@ async def test_connect_failure_logs_and_raises() -> None:
 async def test_dense_sparse_and_hybrid_exceptions_propagate() -> None:
     r = MilvusRetriever({"collection_name": "c"})
     r.collection = MagicMock()
+    r.has_sparse_vector = True  # make sparse search exercise the error path
     r.collection.search.side_effect = RuntimeError("search fail")
     with pytest.raises(RuntimeError):
         await r.dense_search([0.1])
