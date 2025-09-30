@@ -445,8 +445,12 @@ class Qwen3Reranker(BaseReranker):
 
             from transformers import AutoModelForCausalLM, AutoTokenizer  # lazy import
 
+            # CRITICAL: Use right padding for Qwen3-Reranker
+            # The model extracts logits from the last token position (logits[:, -1, :])
+            # Right padding keeps sequences aligned at the final valid token position
+            # Left padding risks the last position being a padding token
             tokenizer_kwargs: Dict[str, Any] = {
-                "padding_side": "left",
+                "padding_side": "right",
                 "trust_remote_code": True,
             }
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -566,11 +570,53 @@ class Qwen3Reranker(BaseReranker):
         with _torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits[:, -1, :]
+
+            # Validate model output before proceeding
+            if _torch.isnan(logits).any() or _torch.isinf(logits).any():
+                logger.error(
+                    "Qwen3 model produced invalid logits (NaN or Inf). "
+                    "This indicates a model inference failure. "
+                    "Device: %s, dtype: %s, input_shape: %s",
+                    self.device,
+                    logits.dtype,
+                    inputs.get("input_ids", None).shape
+                    if "input_ids" in inputs
+                    else "unknown",
+                )
+                raise RuntimeError(
+                    "Qwen3 reranker model produced invalid output (NaN/Inf logits). "
+                    "This may be caused by: 1) MPS backend numerical instability, "
+                    "2) FP16 precision issues, or 3) incorrect tokenization. "
+                    f"Device: {self.device}, dtype: {logits.dtype}"
+                )
+
             true_vec = logits[:, self.token_true_id]
             false_vec = logits[:, self.token_false_id]
+
             stacked = _torch.stack([false_vec, true_vec], dim=1)
             log_probs = _torch.nn.functional.log_softmax(stacked, dim=1)
-            return cast(List[float], log_probs[:, 1].exp().tolist())
+            scores = log_probs[:, 1].exp()
+
+            # Final validation: ensure no NaN scores
+            scores_list = cast(List[float], scores.tolist())
+            nan_count = sum(1 for s in scores_list if s != s)  # NaN != NaN
+            if nan_count > 0:
+                logger.error(
+                    "Qwen3 reranker produced %d NaN scores out of %d "
+                    "documents after softmax",
+                    nan_count,
+                    len(scores_list),
+                )
+                message = (
+                    "Qwen3 reranker produced %d/%d NaN scores. "
+                    "This indicates a numerical computation issue."
+                ) % (
+                    nan_count,
+                    len(scores_list),
+                )
+                raise RuntimeError(message)
+
+            return scores_list
 
     async def rerank(
         self, query: str, documents: List[RetrievalResult], top_n: int = 8
