@@ -28,6 +28,7 @@ async def test_hybrid_search_rrf_forces_fallback_when_native_unavailable() -> No
     cfg = {"collection_name": "c"}
     r = MilvusRetriever(cfg)
     r.collection = MagicMock()  # pretend connected
+    r.has_sparse_vector = True  # enable sparse branch for fallback
 
     # Force native path to be skipped
     with patch("askme.retriever.milvus_retriever.HYBRID_SEARCH_AVAILABLE", False):

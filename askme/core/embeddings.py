@@ -844,9 +844,9 @@ class Qwen3EmbeddingService(EmbeddingBackend):
             self.device,
         )
 
-        # Qwen3 official recommendation: padding_side="left" for better performance
+        # Use right padding to align with downstream batching expectations
         tokenizer_kwargs: Dict[str, Any] = {
-            "padding_side": "left",
+            "padding_side": "right",
             "truncation_side": "right",
             "model_max_length": self.config.max_length,
         }
