@@ -912,14 +912,7 @@ class Qwen3EmbeddingService(EmbeddingBackend):
     def _resolve_dtype(self) -> Any:
         if torch_module is None:
             return None
-        # MPS backend has known issues with FP16 numerical stability
-        # Force FP32 on MPS to avoid NaN issues
-        if self.device == "mps":
-            logger.warning(
-                "Forcing FP32 on MPS device due to known FP16 stability issues"
-            )
-            return torch_module.float32
-        if self.device == "cuda" and self.config.use_fp16:
+        if self.device in {"cuda", "mps"} and self.config.use_fp16:
             return torch_module.float16
         return torch_module.float32
 
