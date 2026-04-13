@@ -90,7 +90,7 @@ dev = [
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.3.0",
     "types-aiofiles>=24.1.0.20250822",
-    "types-pyyaml>=6.0.12.20250822",
+    "types-pyyaml>=6.0.12.20260408",
 ]
 
 [tool.pytest.ini_options]
