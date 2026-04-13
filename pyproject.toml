@@ -21,7 +21,7 @@ dependencies = [
     "torch>=2.0.0",
     "FlagEmbedding>=1.2.10",
     # Cloud reranking fallback
-    "cohere>=4.40.0",
+    "cohere>=6.1.0",
     # Document processing
     "pypdf>=3.17.0",
     "python-multipart>=0.0.6",
