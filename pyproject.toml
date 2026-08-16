@@ -38,7 +38,7 @@ dependencies = [
     "rich>=13.7.0",
     "typer>=0.9.0",
     "loguru>=0.7.2",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     # Search and ranking
     "rank-bm25>=0.2.2",
     "openai>=1.40.0",
