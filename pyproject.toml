@@ -9,7 +9,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
+    "pydantic-settings>=2.13.1",
     # Vector databases - choose one primary, others optional
     "pymilvus>=2.5.0",
     # Pin to the latest v4 compatible with Weaviate 1.32.8
