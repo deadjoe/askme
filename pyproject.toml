@@ -16,10 +16,10 @@ dependencies = [
     "weaviate-client>=4.16.9",
     "qdrant-client>=1.10.0",
     # Embeddings and reranking
-    "sentence-transformers>=2.7.0",
-    "transformers>=4.35.0",
-    "torch>=2.0.0",
-    "FlagEmbedding>=1.2.10",
+    "sentence-transformers>=5.4.0",
+    "transformers>=5.5.3",
+    "torch>=2.11.0",
+    "FlagEmbedding>=1.3.5",
     # Cloud reranking fallback
     "cohere>=4.40.0",
     # Document processing
